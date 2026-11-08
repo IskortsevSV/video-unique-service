@@ -22,16 +22,23 @@ public class VideoService {
     @FunctionalInterface public interface ResultConsumer {
         void accept(Path output, String before, String after) throws IOException;
     }
+    @FunctionalInterface public interface InputWriter {
+        void write(Path input) throws IOException;
+    }
     public void process(MultipartFile file, ProcessingOptions options, ResultConsumer consumer) throws IOException {
-        String name = file.getOriginalFilename();
-        if (file.isEmpty() || name == null || !(name.toLowerCase(Locale.ROOT).endsWith(".mp4") || name.toLowerCase(Locale.ROOT).endsWith(".mov"))) {
+        if (file.isEmpty()) throw new VideoException(HttpStatus.BAD_REQUEST, "A non-empty file is required");
+        process(file.getOriginalFilename(), file::transferTo, options, consumer);
+    }
+    public void process(String name, InputWriter writer, ProcessingOptions options, ResultConsumer consumer) throws IOException {
+        if (name == null || !(name.toLowerCase(Locale.ROOT).endsWith(".mp4") || name.toLowerCase(Locale.ROOT).endsWith(".mov"))) {
             throw new VideoException(HttpStatus.BAD_REQUEST, "A non-empty .mp4 or .mov file is required");
         }
         if (!slots.tryAcquire()) throw new VideoException(HttpStatus.TOO_MANY_REQUESTS, "All processing slots are busy; retry later");
         try (var workspace = new TemporaryWorkspace()) {
             Path input = workspace.file("input.mp4");
             Path output = workspace.file("output.mp4");
-            file.transferTo(input);
+            writer.write(input);
+            if (Files.size(input) == 0) throw new VideoException(HttpStatus.BAD_REQUEST, "A non-empty file is required");
             String before = hashes.sha256(input);
             processor.process(input, output, options);
             consumer.accept(output, before, hashes.sha256(output));

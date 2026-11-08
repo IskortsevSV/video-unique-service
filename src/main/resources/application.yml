@@ -11,3 +11,8 @@ video:
   ffprobe: ${FFPROBE_PATH:ffprobe}
   timeout: 2m
   max-concurrent: 2
+telegram:
+  enabled: ${TELEGRAM_ENABLED:false}
+  token: ${TELEGRAM_TOKEN:}
+  offset-file: ${TELEGRAM_OFFSET_FILE:.local/telegram-offset.txt}
+  allowed-chat-ids: ${TELEGRAM_ALLOWED_CHAT_IDS:}
