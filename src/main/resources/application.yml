@@ -1,0 +1,13 @@
+server:
+  address: ${SERVER_ADDRESS:127.0.0.1}
+spring:
+  servlet:
+    multipart:
+      max-file-size: 200MB
+      max-request-size: 201MB
+      file-size-threshold: 0
+video:
+  ffmpeg: ${FFMPEG_PATH:ffmpeg}
+  ffprobe: ${FFPROBE_PATH:ffprobe}
+  timeout: 2m
+  max-concurrent: 2
