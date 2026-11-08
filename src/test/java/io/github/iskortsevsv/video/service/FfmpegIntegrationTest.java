@@ -21,6 +21,7 @@ import io.github.iskortsevsv.video.dto.ProcessingOptions;
 import io.github.iskortsevsv.video.exception.VideoException;
 
 @EnabledIfEnvironmentVariable(named = "RUN_FFMPEG_TESTS", matches = "true")
+/** Проверяет кодирование и анализ медиа с настоящими FFmpeg и ffprobe. */
 class FfmpegIntegrationTest {
     @TempDir Path directory;
     final ProcessRunner runner = new ProcessRunner();

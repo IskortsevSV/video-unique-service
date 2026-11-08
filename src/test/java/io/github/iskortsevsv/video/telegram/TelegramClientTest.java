@@ -21,6 +21,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import io.github.iskortsevsv.video.config.TelegramProperties;
 
+/** Проверяет взаимодействие с Telegram API через локальный HTTP-сервер. */
 class TelegramClientTest {
     @TempDir Path directory;
     HttpServer server;

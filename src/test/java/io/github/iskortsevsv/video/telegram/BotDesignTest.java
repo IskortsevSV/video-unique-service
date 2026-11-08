@@ -46,6 +46,7 @@ import io.github.iskortsevsv.video.service.PhotoProcessor;
 import io.github.iskortsevsv.video.service.VideoProcessor;
 import io.github.iskortsevsv.video.service.VideoService;
 
+/** Проверяет настройки, экраны и обработку результатов Telegram-бота. */
 class BotDesignTest {
     @TempDir Path directory;
 
@@ -215,7 +216,7 @@ class BotDesignTest {
                             return null;
                         })
                 .when(videos)
-                .process(any(), any(), any(), anyBoolean(), any());
+                .process(any(), any(), any(), anyBoolean(), any(), any());
         doThrow(new TelegramApiException(5))
                 .when(client)
                 .result(anyLong(), anyLong(), any(), anyString(), anyBoolean());

@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.*;
 @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(
         named = "RUN_FFMPEG_TESTS",
         matches = "true")
+/** Проверяет обработку медиа и восстановление при сбоях на локальном имитаторе Telegram. */
 class TelegramResilienceQaTest {
     static final String TOKEN = "123456789:TEST_ONLY_FAKE_TOKEN_12345678901234567890";
     static final long CHAT = 42;
@@ -139,6 +140,16 @@ class TelegramResilienceQaTest {
 
     static String hash(byte[] bytes) throws Exception {
         return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+    }
+
+    @Test
+    void analyzesSourceOnceForThreeDeliveredCopies() throws Exception {
+        fake.media = sample("audio.mp4");
+        update(100, CHAT, "input.mp4", "", fake.media.length);
+        launch(Set.of(CHAT));
+        await(() -> fake.messages.stream().anyMatch(s -> s.contains("Все копии отправлены")), 25);
+        assertEquals(3, fake.uploads.size());
+        assertEquals(1, bot.probes.get());
     }
 
     @Test
@@ -330,6 +341,7 @@ class TelegramResilienceQaTest {
         }
     }
 
+    /** Запускает тестовый экземпляр бота в отдельном процессе для аварийных сценариев. */
     public static class CrashBot {
         public static void main(String[] args) throws Exception {
             var config = new TelegramProperties(true, TOKEN, Path.of(args[1]), Set.of(CHAT));
@@ -339,7 +351,9 @@ class TelegramResilienceQaTest {
         }
     }
 
+    /** Собирает изолированный экземпляр бота для интеграционных проверок. */
     static class TestBot implements AutoCloseable {
+        final AtomicInteger probes = new AtomicInteger();
         final TelegramPoller poller;
         final BotJobs jobs;
 
@@ -351,7 +365,13 @@ class TelegramResilienceQaTest {
                             System.getenv("FFPROBE_PATH"),
                             Duration.ofSeconds(20),
                             2);
-            var video = new VideoProcessor(new ProcessRunner(), props);
+            var video = new VideoProcessor(new ProcessRunner() {
+                @Override
+                public String run(List<String> command, Duration timeout) {
+                    if (command.getFirst().equals(props.ffprobe())) {probes.incrementAndGet();}
+                    return super.run(command, timeout);
+                }
+            }, props);
             var hashes = new HashService();
             var users = new BotUserStore(config);
             jobs = new BotJobs();
@@ -363,7 +383,7 @@ class TelegramResilienceQaTest {
                     new TelegramPoller(
                             client,
                             new TelegramHandler(client, config, users, jobs, batch),
-                            config);
+                            config, jobs);
         }
 
         void start() throws Exception {
@@ -376,8 +396,10 @@ class TelegramResilienceQaTest {
         }
     }
 
+    /** Представляет тестовое обновление Telegram и его идентификатор. */
     record Update(long id, String json) {}
 
+    /** Имитирует нужные методы Telegram API для интеграционных тестов. */
     static class FakeTelegram implements AutoCloseable {
         final HttpServer server;
         final ExecutorService executor = Executors.newCachedThreadPool();

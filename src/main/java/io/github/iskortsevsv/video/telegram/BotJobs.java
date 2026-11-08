@@ -26,7 +26,10 @@ public class BotJobs {
                     Thread.ofPlatform().daemon().name("bot-media-", 0).factory());
 
     /** Добавляет задание в ограниченную очередь, если у чата нет активного задания. */
-    public boolean submit(long chat, Runnable action) {
+    public synchronized boolean submit(long chat, Runnable action) {
+        if (workers.isShutdown()) {
+            throw new RejectedExecutionException("Telegram jobs are stopping");
+        }
         if (!busy.add(chat)) {
             return false;
         }
@@ -40,7 +43,7 @@ public class BotJobs {
                         BotJournal.set(item);
                         try {
                             action.run();
-                            if (item != null && !Thread.currentThread().isInterrupted()) {
+                            if (item != null && !workers.isShutdown() && !Thread.currentThread().isInterrupted()) {
                                 item.complete();
                             }
                         } catch (java.io.IOException ex) {
@@ -65,7 +68,11 @@ public class BotJobs {
 
     /** Останавливает очередь и прерывает исполняемые задания. */
     @PreDestroy
-    public void stop() {
+    public synchronized void stop() {
         workers.shutdownNow();
+    }
+    /** Ждёт выхода воркера, включая завершение записи журнала и очистки файлов. */
+    boolean awaitTermination(java.time.Duration timeout) throws InterruptedException {
+        return workers.awaitTermination(Math.max(0, timeout.toNanos()), TimeUnit.NANOSECONDS);
     }
 }

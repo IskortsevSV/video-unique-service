@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.YearMonth;
 
+/** Проверяет сохранение и восстановление состояния заданий Telegram. */
 class BotJournalTest {
     @TempDir Path directory;
 

@@ -24,6 +24,7 @@ import io.github.iskortsevsv.video.config.VideoProperties;
 import io.github.iskortsevsv.video.dto.ProcessingOptions;
 import io.github.iskortsevsv.video.exception.VideoException;
 
+/** Проверяет параметры, ограничения и управление ресурсами обработки видео. */
 class VideoTests {
     @TempDir Path directory;
 
@@ -194,6 +195,7 @@ class VideoTests {
                         .value());
     }
 
+    /** Создаёт длительно работающий дочерний процесс для проверки таймаута. */
     public static class Sleeper {
         public static void main(String[] args) throws Exception {
             Thread.sleep(30000);

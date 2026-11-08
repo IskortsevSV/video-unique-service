@@ -51,6 +51,14 @@ public class VideoProcessor {
             ProcessingOptions options,
             boolean hard,
             java.util.function.IntConsumer progress) {
+        process(input, output, options, hard, progress, probe(input));
+    }
+
+    /** Метаданные одного исходного видео; длительность указана до изменения скорости. */
+    public record VideoInfo(boolean audio, double durationSeconds) {}
+
+    /** Анализирует контейнер один раз для последующего создания нескольких копий. */
+    public VideoInfo probe(Path input) {
         String probe =
                 runner.run(
                         List.of(
@@ -82,11 +90,17 @@ public class VideoProcessor {
                                             }
                                         })
                                 .findFirst()
-                                .orElse(0)
-                        / options.speed();
+                                .orElse(0);
+        return new VideoInfo(probe.contains("codec_type=audio"), duration);
+    }
+
+    /** Кодирует копию, используя метаданные именно переданного исходного файла. */
+    public void process(Path input, Path output, ProcessingOptions options, boolean hard,
+            java.util.function.IntConsumer progress, VideoInfo info) {
+        double duration = info.durationSeconds() / options.speed();
         var args =
                 new ArrayList<>(
-                        command(input, output, options, probe.contains("codec_type=audio")));
+                        command(input, output, options, info.audio()));
         if (hard) {
             int index = args.indexOf("-vf") + 1;
             args.set(index, args.get(index) + ",eq=contrast=1.04:saturation=1.06:brightness=0.01");

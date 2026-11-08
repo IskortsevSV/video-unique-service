@@ -15,6 +15,7 @@ final class WindowsProcessJob {
 
     private WindowsProcessJob() {}
 
+    /** Описывает функции Win32, необходимые для управления Job Object. */
     interface Kernel extends StdCallLibrary {
         HANDLE CreateJobObjectW(Pointer attributes, WString name);
 
@@ -40,6 +41,7 @@ final class WindowsProcessJob {
         "priorityClass",
         "schedulingClass"
     })
+    /** Содержит базовые ограничения Windows Job Object. */
     public static class BasicLimits extends Structure {
         public long perProcessUserTimeLimit, perJobUserTimeLimit;
         public int limitFlags;
@@ -57,6 +59,7 @@ final class WindowsProcessJob {
         "writeBytes",
         "otherBytes"
     })
+    /** Содержит счётчики ввода-вывода Windows Job Object. */
     public static class IoCounters extends Structure {
         public long readOperations,
                 writeOperations,
@@ -74,6 +77,7 @@ final class WindowsProcessJob {
         "peakProcessMemoryUsed",
         "peakJobMemoryUsed"
     })
+    /** Содержит расширенные ограничения Windows Job Object. */
     public static class ExtendedLimits extends Structure {
         public BasicLimits basic = new BasicLimits();
         public IoCounters io = new IoCounters();

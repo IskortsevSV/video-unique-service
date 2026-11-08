@@ -63,6 +63,8 @@ public class MediaBatchService {
                         (input, workspace) -> {
                             String before = hashes.sha256(input);
                             Set<String> seen = new HashSet<>();
+                            var info = !photo && BotJournal.sent() < profile.copies()
+                                    ? videos.probe(input) : null;
                             for (int i = 0; i < profile.copies(); i++) {
                                 if (i < BotJournal.sent()) {
                                     progress.state(i, "Завершено ✅");
@@ -94,7 +96,8 @@ public class MediaBatchService {
                                                                     + "□".repeat(10 - percent / 10)
                                                                     + "] "
                                                                     + percent
-                                                                    + "%"));
+                                                                    + "%"),
+                                            info);
                                 }
                                 String after = hashes.sha256(output);
                                 if (after.equals(before) || !seen.add(after)) {

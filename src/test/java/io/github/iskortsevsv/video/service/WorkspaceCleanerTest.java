@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+/** Проверяет очистку временных каталогов и защиту активных заданий. */
 class WorkspaceCleanerTest {
     @TempDir Path root;
 
@@ -63,6 +64,7 @@ class WorkspaceCleanerTest {
         }
     }
 
+    /** Удерживает рабочий каталог в отдельном процессе для проверки очистки после сбоя. */
     public static class CrashWorker {
         public static void main(String[] args) throws Exception {
             var workspace = new TemporaryWorkspace(Path.of(args[0]));

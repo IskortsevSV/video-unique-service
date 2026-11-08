@@ -19,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /** Локальный журнал принятых обновлений. Медиафайлы в журнале не сохраняются. */
 final class BotJournal {
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(BotJournal.class);
     private static final ThreadLocal<Item> CURRENT = new ThreadLocal<>();
     private final Path directory;
     private final JsonMapper mapper = new JsonMapper();
@@ -32,7 +33,20 @@ final class BotJournal {
         Files.createDirectories(directory);
         long id = update.path("update_id").asLong();
         Path path = directory.resolve(id + ".properties");
-        Properties p = read(path);
+        if (Files.exists(quarantinePath(path))) {
+            return blocked(id, path);
+        }
+        Properties p;
+        if (Files.exists(path)) {
+            try {
+                p = validated(path);
+            } catch (RuntimeException ex) {
+                quarantine(path);
+                return blocked(id, path);
+            }
+        } else {
+            p = new Properties();
+        }
         if (p.isEmpty()) {
             p.setProperty(
                     "update",
@@ -66,11 +80,13 @@ final class BotJournal {
                     paths.filter(x -> x.getFileName().toString().endsWith(".properties"))
                             .sorted()
                             .toList()) {
-                Properties data = read(p);
-                if (!"true".equals(data.getProperty("done")) && data.containsKey("update")) {
-                    updates.add(
-                            mapper.readTree(
-                                    Base64.getDecoder().decode(data.getProperty("update"))));
+                try {
+                    Properties data = validated(p);
+                    if (!"true".equals(data.getProperty("done"))) {
+                        updates.add(decodeUpdate(data));
+                    }
+                } catch (RuntimeException ex) {
+                    quarantine(p);
                 }
             }
         }
@@ -90,13 +106,76 @@ final class BotJournal {
                     long id =
                             Long.parseLong(
                                     name.substring(0, name.length() - ".properties".length()));
-                    if (id < offset && "true".equals(read(p).getProperty("done"))) {
+                    if (id < offset && "true".equals(validated(p).getProperty("done"))) {
                         Files.deleteIfExists(p);
                     }
-                } catch (NumberFormatException ignored) {
+                } catch (RuntimeException ex) {
+                    quarantine(p);
                 }
             }
         }
+    }
+
+    private Path quarantinePath(Path file) {
+        return directory.resolve("quarantine").resolve(file.getFileName());
+    }
+
+    private void quarantine(Path file) throws IOException {
+        Path target = quarantinePath(file);
+        Files.createDirectories(target.getParent());
+        // The original name also serves as a durable block against replaying an unknown delivery.
+        if (Files.exists(target)) {
+            target = target.resolveSibling(target.getFileName() + "." + java.util.UUID.randomUUID());
+        }
+        Files.move(file, target);
+        LOG.warn("Telegram journal record quarantined; manual review required");
+    }
+
+    private Item blocked(long id, Path path) {
+        var data = new Properties();
+        data.setProperty("done", "true");
+        return new Item(this, id, path, data);
+    }
+
+    private JsonNode decodeUpdate(Properties data) {
+        return mapper.readTree(Base64.getDecoder().decode(data.getProperty("update")));
+    }
+
+    private Properties validated(Path path) throws IOException {
+        var data = read(path);
+        String name = path.getFileName().toString();
+        long id = Long.parseLong(name.substring(0, name.length() - ".properties".length()));
+        if (id < 0 || (data.containsKey("done") && !data.getProperty("done").equals("true"))) {
+            throw new IllegalArgumentException("Invalid journal record");
+        }
+        if ("true".equals(data.getProperty("done"))) {
+            if (data.size() != 1) {
+                throw new IllegalArgumentException("Invalid completion marker");
+            }
+            return data;
+        }
+        var update = decodeUpdate(data);
+        if (update == null || !update.isObject() || !update.path("update_id").isIntegralNumber()
+                || update.path("update_id").asLong() != id) {
+            throw new IllegalArgumentException("Invalid update identity");
+        }
+        int sent = Integer.parseInt(data.getProperty("sent"));
+        if (sent < 0 || sent > 10 || !Set.of("true", "false").contains(data.getProperty("sending", "false"))) {
+            throw new IllegalArgumentException("Invalid delivery state");
+        }
+        boolean snapshot = data.containsKey("mode") || data.containsKey("copies")
+                || data.containsKey("speed") || data.containsKey("scale");
+        if (snapshot) {
+            int copies = Integer.parseInt(data.getProperty("copies"));
+            if (!Set.of("basic", "hard").contains(data.getProperty("mode")) || copies < 1 || copies > 10 || sent > copies) {
+                throw new IllegalArgumentException("Invalid job settings");
+            }
+            new io.github.iskortsevsv.video.dto.ProcessingOptions(
+                    Double.parseDouble(data.getProperty("speed")), Double.parseDouble(data.getProperty("scale")));
+        } else if (sent != 0 || Boolean.parseBoolean(data.getProperty("sending"))) {
+            throw new IllegalArgumentException("Missing job settings");
+        }
+        return data;
     }
 
     private static Properties read(Path path) throws IOException {
@@ -142,6 +221,7 @@ final class BotJournal {
         }
     }
 
+    /** Хранит и атомарно обновляет состояние одного задания журнала. */
     static final class Item {
         private final BotJournal owner;
         private final long id;
@@ -234,6 +314,7 @@ final class BotJournal {
         }
     }
 
+    /** Фиксирует параметры обработки, выбранные при приёме задания. */
     record Snapshot(String mode, int copies, double speed, double scale) {}
 
     static Snapshot snapshot(

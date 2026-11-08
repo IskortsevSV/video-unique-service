@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+/** Отслеживает состояния копий и периодически обновляет сообщение Telegram. */
 final class BatchProgress implements AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(BatchProgress.class);

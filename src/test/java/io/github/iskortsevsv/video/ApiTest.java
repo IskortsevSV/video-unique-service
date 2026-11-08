@@ -31,11 +31,13 @@ import org.springframework.web.context.WebApplicationContext;
 
 import io.github.iskortsevsv.video.service.VideoProcessor;
 
+/** Проверяет HTTP API, валидацию и описание OpenAPI. */
 class ApiTest {
     static ConfigurableApplicationContext context;
     static VideoProcessor processor = mock(VideoProcessor.class);
 
     @Configuration(proxyBeanMethods = false)
+    /** Предоставляет тестовые зависимости для HTTP API. */
     static class TestConfig {
         @Bean
         @Primary

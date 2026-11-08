@@ -24,6 +24,7 @@ import tools.jackson.databind.json.JsonMapper;
 import io.github.iskortsevsv.video.config.TelegramProperties;
 import io.github.iskortsevsv.video.dto.ProcessingOptions;
 
+/** Проверяет маршрутизацию, настройки и polling Telegram-бота. */
 class TelegramTests {
     @TempDir Path directory;
     final JsonMapper json = new JsonMapper();
@@ -117,7 +118,7 @@ class TelegramTests {
     void persistsOffsetAndRedactsConfiguration() throws Exception {
         var config = config(Set.of());
         var poller =
-                new TelegramPoller(mock(TelegramClient.class), mock(TelegramHandler.class), config);
+                new TelegramPoller(mock(TelegramClient.class), mock(TelegramHandler.class), config, new BotJobs());
         poller.save(123);
         poller.save(124);
         assertEquals("124", Files.readString(config.offsetFile()));
@@ -131,9 +132,9 @@ class TelegramTests {
     void preventsTwoPollersSharingTheSameOffsetFile() throws Exception {
         var config = config(Set.of());
         var first =
-                new TelegramPoller(mock(TelegramClient.class), mock(TelegramHandler.class), config);
+                new TelegramPoller(mock(TelegramClient.class), mock(TelegramHandler.class), config, new BotJobs());
         var second =
-                new TelegramPoller(mock(TelegramClient.class), mock(TelegramHandler.class), config);
+                new TelegramPoller(mock(TelegramClient.class), mock(TelegramHandler.class), config, new BotJobs());
         first.start();
         try {
             assertThrows(IllegalStateException.class, second::start);
