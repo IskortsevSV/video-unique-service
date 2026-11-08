@@ -25,6 +25,9 @@ public class VideoService {
     @FunctionalInterface public interface InputWriter {
         void write(Path input) throws IOException;
     }
+    @FunctionalInterface public interface InputConsumer {
+        void accept(Path input, TemporaryWorkspace workspace) throws IOException;
+    }
     public void process(MultipartFile file, ProcessingOptions options, ResultConsumer consumer) throws IOException {
         if (file.isEmpty()) throw new VideoException(HttpStatus.BAD_REQUEST, "A non-empty file is required");
         process(file.getOriginalFilename(), file::transferTo, options, consumer);
@@ -33,15 +36,20 @@ public class VideoService {
         if (name == null || !(name.toLowerCase(Locale.ROOT).endsWith(".mp4") || name.toLowerCase(Locale.ROOT).endsWith(".mov"))) {
             throw new VideoException(HttpStatus.BAD_REQUEST, "A non-empty .mp4 or .mov file is required");
         }
-        if (!slots.tryAcquire()) throw new VideoException(HttpStatus.TOO_MANY_REQUESTS, "All processing slots are busy; retry later");
-        try (var workspace = new TemporaryWorkspace()) {
-            Path input = workspace.file("input.mp4");
+        withInput(writer, (input, workspace) -> {
             Path output = workspace.file("output.mp4");
-            writer.write(input);
-            if (Files.size(input) == 0) throw new VideoException(HttpStatus.BAD_REQUEST, "A non-empty file is required");
             String before = hashes.sha256(input);
             processor.process(input, output, options);
             consumer.accept(output, before, hashes.sha256(output));
+        });
+    }
+    public void withInput(InputWriter writer, InputConsumer consumer) throws IOException {
+        if (!slots.tryAcquire()) throw new VideoException(HttpStatus.TOO_MANY_REQUESTS, "All processing slots are busy; retry later");
+        try (var workspace = new TemporaryWorkspace()) {
+            Path input = workspace.file("input.mp4");
+            writer.write(input);
+            if (Files.size(input) == 0) throw new VideoException(HttpStatus.BAD_REQUEST, "A non-empty file is required");
+            consumer.accept(input, workspace);
         } finally { slots.release(); }
     }
 }

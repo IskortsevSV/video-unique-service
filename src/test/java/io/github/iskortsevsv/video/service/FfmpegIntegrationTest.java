@@ -41,4 +41,16 @@ class FfmpegIntegrationTest {
         assertEquals(422, assertThrows(VideoException.class,
                 () -> processor.process(input, directory.resolve("out.mp4"), new ProcessingOptions(1.01, .98))).status().value());
     }
+    @Test void hardModeReportsRealProgressAndChangesVideo() throws Exception {
+        Path input = directory.resolve("input.mp4"), basic = directory.resolve("basic.mp4"), hard = directory.resolve("hard.mp4");
+        runner.run(List.of(ffmpeg, "-y", "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=30:duration=2", "-c:v", "libx264", input.toString()), timeout);
+        var options = new ProcessingOptions(1.04, .94);
+        processor.process(input, basic, options);
+        var progress = new java.util.concurrent.CopyOnWriteArrayList<Integer>();
+        processor.process(input, hard, options, true, progress::add);
+        assertFalse(progress.isEmpty()); assertEquals(100, progress.getLast());
+        assertTrue(progress.stream().anyMatch(value -> value < 100));
+        assertTrue(progress.stream().allMatch(value -> value >= 0 && value <= 100));
+        assertNotEquals(new HashService().sha256(basic), new HashService().sha256(hard));
+    }
 }

@@ -31,8 +31,10 @@ public class TelegramPoller {
     }
     private void poll(long offset) {
         LOG.info("Telegram polling enabled");
+        boolean configured = false;
         while (running && !Thread.currentThread().isInterrupted()) {
             try {
+                if (!configured) { client.configureMenu(); configured = true; }
                 for (var update : client.updates(offset)) {
                     if (!running) return;
                     long next = update.path("update_id").asLong() + 1;
