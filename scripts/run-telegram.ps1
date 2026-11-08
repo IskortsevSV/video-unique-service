@@ -8,7 +8,7 @@ if (!(Test-Path $jar)) { throw 'Build the project first: mvn verify' }
 $javaExecutable = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'bin/java.exe' } else { 'java' }
 Push-Location $repository
 try {
-    & $javaExecutable -jar $jar "--spring.config.additional-location=file:$($configuration.Replace('\','/'))" "--server.port=$Port"
+    & $javaExecutable '-Djava.net.useSystemProxies=true' -jar $jar "--spring.config.additional-location=file:$($configuration.Replace('\','/'))" "--server.port=$Port"
     $result = $LASTEXITCODE
 } finally { Pop-Location }
 exit $result
