@@ -56,4 +56,17 @@ class TelegramClientTest {
         response("/bot123:fake/getFile", 200, "{\"ok\":true,\"result\":{\"file_path\":\"videos/x.mp4\",\"file_size\":20000001}}");
         assertThrows(IllegalArgumentException.class, () -> client.download("file-id", directory.resolve("input.mp4")));
     }
+    @Test void menuCallbacksAndVideoUploadUseTelegramMethods() throws Exception {
+        response("/bot123:fake/sendMessage", 200, "{\"ok\":true,\"result\":{\"message_id\":99}}");
+        assertEquals(99, client.screen(42, "<b>Menu</b>", BotScreens.homeKeys()));
+        assertTrue(request.get().contains("inline_keyboard"));
+        response("/bot123:fake/answerCallbackQuery", 200, "{\"ok\":true,\"result\":true}");
+        client.answer("callback"); assertTrue(request.get().contains("callback_query_id"));
+        response("/bot123:fake/editMessageText", 200, "{\"ok\":true,\"result\":{}}");
+        client.edit(42, 99, "progress", BotScreens.homeKeys()); assertTrue(request.get().contains("\"message_id\":99"));
+        response("/bot123:fake/sendVideo", 200, "{\"ok\":true,\"result\":{}}");
+        client.result(42, 8, Files.writeString(directory.resolve("copy.mp4"), "MP4"), "caption", false);
+        assertTrue(request.get().contains("name=\"video\""));
+        assertTrue(request.get().contains("supports_streaming"));
+    }
 }

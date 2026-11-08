@@ -12,6 +12,9 @@ import java.util.concurrent.*;
 @Component
 public class ProcessRunner {
     public String run(List<String> command, Duration timeout) {
+        return run(command, timeout, line -> {});
+    }
+    public String run(List<String> command, Duration timeout, java.util.function.Consumer<String> lines) {
         Process process;
         try {
             process = new ProcessBuilder(command).redirectErrorStream(true).start();
@@ -24,9 +27,16 @@ public class ProcessRunner {
             var output = executor.submit(() -> {
                 try (var input = process.getInputStream(); var buffer = new ByteArrayOutputStream()) {
                     byte[] chunk = new byte[8192];
+                    var line = new StringBuilder();
                     int count;
                     while ((count = input.read(chunk)) != -1) {
                         buffer.write(chunk, 0, Math.min(count, Math.max(0, 65536 - buffer.size())));
+                        for (int i = 0; i < count; i++) {
+                            if (chunk[i] == '\n') {
+                                lines.accept(line.toString().strip());
+                                line.setLength(0);
+                            } else if (line.length() < 4096) line.append((char) chunk[i]);
+                        }
                     }
                     return buffer.toString(StandardCharsets.UTF_8);
                 }

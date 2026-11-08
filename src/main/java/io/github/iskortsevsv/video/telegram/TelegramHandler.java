@@ -3,7 +3,6 @@ package io.github.iskortsevsv.video.telegram;
 import io.github.iskortsevsv.video.config.TelegramProperties;
 import io.github.iskortsevsv.video.dto.ProcessingOptions;
 import io.github.iskortsevsv.video.exception.VideoException;
-import io.github.iskortsevsv.video.service.VideoService;
 import java.util.*;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -12,51 +11,66 @@ import tools.jackson.databind.JsonNode;
 @Component
 @ConditionalOnProperty(name = "telegram.enabled", havingValue = "true")
 public class TelegramHandler {
-    static final String HELP = "Отправьте видео или файл MP4/MOV до 20 МБ. По умолчанию: speed=1.01 scale=0.98. "
-            + "Параметры можно указать в подписи, например: speed=1.05 scale=0.95. "
-            + "speed: 0.5–2.0, scale: 0.5–1.0. Результат придёт файлом MP4. "
-            + "Разные SHA-256 подтверждают различие байтов, но не гарантируют уникальность для соцсетей. "
-            + "Для сохранения исходных байтов отправляйте видео как файл. /id — ID чата.";
     private final TelegramClient client;
-    private final VideoService service;
     private final TelegramProperties config;
-    public TelegramHandler(TelegramClient client, VideoService service, TelegramProperties config) {
-        this.client = client; this.service = service; this.config = config;
+    private final BotUserStore users;
+    private final BotJobs jobs;
+    private final MediaBatchService batches;
+    public TelegramHandler(TelegramClient client, TelegramProperties config, BotUserStore users, BotJobs jobs, MediaBatchService batches) {
+        this.client = client; this.config = config; this.users = users; this.jobs = jobs; this.batches = batches;
     }
     public void handle(JsonNode update) {
-        var message = update.path("message");
+        boolean callback = update.has("callback_query");
+        var query = update.path("callback_query");
+        var message = callback ? query.path("message") : update.path("message");
         var chat = message.path("chat");
         if (!chat.path("type").asText().equals("private")) return;
         long id = chat.path("id").asLong();
         if (!config.allowedChatIds().isEmpty() && !config.allowedChatIds().contains(id)) return;
-        String text = message.path("text").asText("");
-        if (text.equals("/id")) { client.message(id, "ID чата: " + id); return; }
-        var media = message.has("video") ? message.path("video") : message.path("document");
-        if (!media.has("file_id")) { client.message(id, HELP); return; }
+        if (callback && query.path("from").path("id").asLong() != id) return;
         try {
-            if (media.path("file_size").asLong(0) > TelegramClient.MAX_INPUT)
-                throw new IllegalArgumentException("Telegram позволяет скачать файл не больше 20 МБ. Отправьте файл меньшего размера.");
-            String name = media.path("file_name").asText(message.has("video") ? "video.mp4" : "");
-            if (!name.toLowerCase(Locale.ROOT).matches(".*\\.(mp4|mov)$"))
-                throw new IllegalArgumentException("Отправьте файл MP4 или MOV.");
-            var options = options(message.path("caption").asText(""));
-            client.message(id, "Видео принято. Обрабатываю…");
-            service.process(name, path -> client.download(media.path("file_id").asText(), path), options,
-                    (output, before, after) -> client.document(id, output,
-                            "Видео обработано ✅\nХеш до: " + before + "\nХеш после: " + after
-                            + "\nСкорость: " + options.speed() + "x\nМасштаб: " + options.scale()
-                            + "x\nSHA-256 показывает различие байтов; уникальность для соцсетей не гарантируется."));
-        } catch (IllegalArgumentException ex) { client.message(id, ex.getMessage()); }
-        catch (VideoException ex) {
-            String error = switch (ex.status().value()) {
-                case 429 -> "Сервис занят. Отправьте видео немного позже.";
-                case 504 -> "Обработка заняла слишком много времени. Попробуйте более короткое видео.";
-                case 422 -> "Не удалось прочитать видео. Нужен корректный MP4/MOV с видеодорожкой.";
-                default -> "Не удалось обработать видео. Проверьте файл или попробуйте позже.";
-            };
-            client.message(id, error);
-        } catch (TelegramApiException ex) { throw ex; }
-        catch (Exception ex) { client.message(id, "Ошибка обработки файла. Попробуйте позже."); }
+            if (callback) client.answer(query.path("id").asText());
+            String action = callback ? query.path("data").asText() : message.path("text").asText("").split("\\s+")[0].split("@")[0];
+            var profile = users.get(id);
+            if (action.startsWith("mode:")) {
+                profile = users.settings(id, action.substring(5), profile.copies()); action = "settings";
+            } else if (action.startsWith("copies:")) {
+                profile = users.settings(id, profile.mode(), Integer.parseInt(action.substring(7))); action = "settings";
+            }
+            switch (action) {
+                case "/id" -> { client.message(id, "ID чата: " + id); return; }
+                case "/settings", "settings" -> { show(id, callback, message, BotScreens.settings(profile), BotScreens.settingsKeys(profile)); return; }
+                case "/subscription", "subscription" -> { show(id, callback, message, BotScreens.subscription(profile), BotScreens.subscriptionKeys()); return; }
+                case "pay:basic", "pay:pro" -> { client.screen(id,
+                        "🧪 <b>Оплата пока не подключена</b>\n\nЭто демонстрационная кнопка. Деньги не списываются, подписка не оформляется.\nОба режима и до 10 копий доступны бесплатно — просто отправь файл.", BotScreens.homeKeys()); return; }
+                case "/help", "help", "upload" -> { show(id, callback, message, BotScreens.help(), BotScreens.backKeys()); return; }
+                case "/start", "/menu", "home" -> { show(id, callback, message, BotScreens.home(chat.path("first_name").asText("друг")), BotScreens.homeKeys()); return; }
+                default -> { if (callback) { client.message(id, "Кнопка устарела. Откройте /start."); return; } }
+            }
+            boolean photo = message.has("photo");
+            var media = photo ? message.path("photo").get(message.path("photo").size() - 1)
+                    : message.has("video") ? message.path("video") : message.path("document");
+            if (media == null || !media.has("file_id")) { client.screen(id, BotScreens.help(), BotScreens.homeKeys()); return; }
+            if (media.path("file_size").asLong(0) > TelegramClient.MAX_INPUT) throw new IllegalArgumentException("Файл превышает 20 МБ. Отправьте файл меньшего размера.");
+            String name = media.path("file_name").asText(photo ? "photo.jpg" : message.has("video") ? "video.mp4" : "").toLowerCase(Locale.ROOT);
+            photo = photo || name.matches(".*\\.(jpg|jpeg|png)$");
+            if (!photo && !name.matches(".*\\.(mp4|mov)$")) throw new IllegalArgumentException("Отправьте MP4/MOV или JPEG/PNG.");
+            String caption = message.path("caption").asText("");
+            var options = caption.isBlank() && profile.hard() ? new ProcessingOptions(1.04, .94) : options(caption);
+            long progress = client.screen(id, "⏳ <b>Файл принят</b>\nКопий: " + profile.copies()
+                    + " · Режим: " + (profile.hard() ? "Hard" : "Basic") + "\nОжидает обработки…", Map.of("inline_keyboard", List.of()));
+            var selected = profile; boolean isPhoto = photo; String fileId = media.path("file_id").asText();
+            if (!jobs.submit(id, () -> batches.run(id, message.path("message_id").asLong(), progress, fileId, isPhoto, selected, options)))
+                client.edit(id, progress, "⏳ У вас уже есть задание или очередь заполнена. Дождитесь результата и отправьте файл снова.", BotScreens.homeKeys());
+        } catch (IllegalArgumentException ex) { client.message(id, "⚠️ Проверьте параметры. " + ex.getMessage()); }
+        catch (java.io.IOException ex) { client.message(id, "Не удалось сохранить настройки. Попробуйте позже."); }
+    }
+    private void show(long chat, boolean callback, JsonNode message, String text, Object keyboard) {
+        if (!callback) client.screen(chat, text, keyboard);
+        else {
+            try { client.edit(chat, message.path("message_id").asLong(), text, keyboard); }
+            catch (TelegramApiException ignored) { /* Includes unchanged message on a repeated selection. */ }
+        }
     }
     static ProcessingOptions options(String caption) {
         double speed = 1.01, scale = .98;

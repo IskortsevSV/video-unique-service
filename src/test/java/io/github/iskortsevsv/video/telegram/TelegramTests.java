@@ -23,32 +23,30 @@ class TelegramTests {
     }
     @Test void handlesVideoAndReturnsHashes() throws Exception {
         var client = mock(TelegramClient.class);
-        var service = mock(VideoService.class);
-        var handler = new TelegramHandler(client, service, config(Set.of()));
+        var batches = mock(MediaBatchService.class);
+        var jobs = mock(BotJobs.class);
+        var config = config(Set.of());
+        var handler = new TelegramHandler(client, config, new BotUserStore(config), jobs, batches);
         doAnswer(call -> {
-            VideoService.InputWriter writer = call.getArgument(1);
-            Path input = directory.resolve("input.mp4"); writer.write(input);
-            VideoService.ResultConsumer consumer = call.getArgument(3);
-            consumer.accept(directory.resolve("output.mp4"), "before-hash", "after-hash");
-            return null;
-        }).when(service).process(anyString(), any(VideoService.InputWriter.class), any(), any());
+            ((Runnable) call.getArgument(1)).run(); return true;
+        }).when(jobs).submit(anyLong(), any());
         handler.handle(json.readTree("""
-                {"message":{"chat":{"id":42,"type":"private"},"video":{"file_id":"abc","file_size":100},"caption":"speed=1.2"}}
+                {"message":{"message_id":1,"chat":{"id":42,"type":"private"},"video":{"file_id":"abc","file_size":100},"caption":"speed=1.2"}}
                 """));
-        verify(service).process(eq("video.mp4"), any(VideoService.InputWriter.class), eq(new ProcessingOptions(1.2, .98)), any());
-        verify(client).download(eq("abc"), any());
-        verify(client).document(eq(42L), any(), contains("before-hash\nХеш после: after-hash"));
+        verify(batches).run(eq(42L), anyLong(), anyLong(), eq("abc"), eq(false), argThat(p -> p.copies() == 3), eq(new ProcessingOptions(1.2, .98)));
     }
     @Test void ignoresGroupsAndUnauthorizedChats() {
-        var client = mock(TelegramClient.class); var service = mock(VideoService.class);
-        var handler = new TelegramHandler(client, service, config(Set.of(99L)));
+        var client = mock(TelegramClient.class); var service = mock(MediaBatchService.class);
+        var config = config(Set.of(99L));
+        var handler = new TelegramHandler(client, config, new BotUserStore(config), mock(BotJobs.class), service);
         handler.handle(json.readTree("{\"message\":{\"chat\":{\"id\":42,\"type\":\"private\"},\"text\":\"/start\"}}"));
         handler.handle(json.readTree("{\"message\":{\"chat\":{\"id\":99,\"type\":\"group\"},\"text\":\"/start\"}}"));
         verifyNoInteractions(client, service);
     }
     @Test void rejectsOversizedVideoBeforeDownloading() {
-        var client = mock(TelegramClient.class); var service = mock(VideoService.class);
-        new TelegramHandler(client, service, config(Set.of())).handle(json.readTree("""
+        var client = mock(TelegramClient.class); var service = mock(MediaBatchService.class);
+        var config = config(Set.of());
+        new TelegramHandler(client, config, new BotUserStore(config), mock(BotJobs.class), service).handle(json.readTree("""
                 {"message":{"chat":{"id":42,"type":"private"},"document":{"file_id":"abc","file_name":"x.mp4","file_size":20000001}}}
                 """));
         verifyNoInteractions(service);

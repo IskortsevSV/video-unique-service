@@ -14,13 +14,31 @@ public class VideoProcessor {
     private final VideoProperties config;
     public VideoProcessor(ProcessRunner runner, VideoProperties config) { this.runner = runner; this.config = config; }
     public void process(Path input, Path output, ProcessingOptions options) {
+        process(input, output, options, false, progress -> {});
+    }
+    public void process(Path input, Path output, ProcessingOptions options, boolean hard, java.util.function.IntConsumer progress) {
         String probe = runner.run(List.of(config.ffprobe(), "-v", "error", "-protocol_whitelist", "file",
-                "-show_entries", "format=format_name:stream=codec_type", "-of", "default=noprint_wrappers=1",
+                "-show_entries", "format=format_name,duration:stream=codec_type", "-of", "default=noprint_wrappers=1",
                 input.toString()), config.timeout());
         if (!probe.contains("codec_type=video") || !probe.contains("mp4")) {
             throw new VideoException(HttpStatus.UNPROCESSABLE_CONTENT, "An MP4/MOV container with a video track is required");
         }
-        runner.run(command(input, output, options, probe.contains("codec_type=audio")), config.timeout());
+        double duration = probe.lines().filter(line -> line.startsWith("duration=")).mapToDouble(line -> {
+            try { return Double.parseDouble(line.substring(9)); } catch (NumberFormatException ex) { return 0; }
+        }).findFirst().orElse(0) / options.speed();
+        var args = new ArrayList<>(command(input, output, options, probe.contains("codec_type=audio")));
+        if (hard) {
+            int index = args.indexOf("-vf") + 1;
+            args.set(index, args.get(index) + ",eq=contrast=1.04:saturation=1.06:brightness=0.01");
+        }
+        args.addAll(1, List.of("-progress", "pipe:1", "-nostats"));
+        runner.run(args, config.timeout(), line -> {
+            if (duration > 0 && Double.isFinite(duration) && line.startsWith("out_time_us=")) {
+                try { progress.accept((int) Math.clamp(Long.parseLong(line.substring(12)) / 10000.0 / duration, 0, 99)); }
+                catch (NumberFormatException ignored) { /* FFmpeg may report N/A. */ }
+            }
+        });
+        progress.accept(100);
     }
     List<String> command(Path input, Path output, ProcessingOptions options, boolean audio) {
         String filter = String.format(Locale.ROOT,

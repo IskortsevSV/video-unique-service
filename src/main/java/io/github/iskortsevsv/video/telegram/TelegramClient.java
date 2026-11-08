@@ -37,10 +37,42 @@ public class TelegramClient {
         files = base + "/file/bot" + properties.token() + "/";
     }
     public JsonNode updates(long offset) {
-        return call("getUpdates", Map.of("offset", offset, "timeout", 25, "limit", 1, "allowed_updates", new String[]{"message"}));
+        return call("getUpdates", Map.of("offset", offset, "timeout", 25, "limit", 1, "allowed_updates", new String[]{"message", "callback_query"}));
     }
     public void message(long chat, String text) {
         call("sendMessage", Map.of("chat_id", chat, "text", text));
+    }
+    public long screen(long chat, String text, Object keyboard) {
+        return call("sendMessage", Map.of("chat_id", chat, "text", text, "parse_mode", "HTML", "reply_markup", keyboard)).path("message_id").asLong();
+    }
+    public void edit(long chat, long message, String text, Object keyboard) {
+        call("editMessageText", Map.of("chat_id", chat, "message_id", message, "text", text,
+                "parse_mode", "HTML", "reply_markup", keyboard));
+    }
+    public void answer(String id) { call("answerCallbackQuery", Map.of("callback_query_id", id)); }
+    public void configureMenu() {
+        call("setMyCommands", Map.of("commands", java.util.List.of(
+                Map.of("command", "start", "description", "Главное меню"),
+                Map.of("command", "settings", "description", "Режим и количество копий"),
+                Map.of("command", "subscription", "description", "Подписка и статистика"),
+                Map.of("command", "help", "description", "Как обработать фото или видео"),
+                Map.of("command", "id", "description", "Мой ID чата"))));
+        call("setChatMenuButton", Map.of("menu_button", Map.of("type", "commands")));
+        call("setMyDescription", Map.of("description", "VUniq — обработка фото и видео. Режимы Basic и Hard, до 10 копий, прогресс и SHA-256. Тестовый доступ бесплатный; оплата отключена. Различие файлов не гарантирует уникальность для соцсетей."));
+    }
+    public void result(long chat, long replyTo, Path output, String caption, boolean photo) throws IOException {
+        if (Files.size(output) > MAX_OUTPUT) throw new IllegalArgumentException("Результат превышает лимит Telegram 50 МБ.");
+        var body = new LinkedMultiValueMap<String, Object>();
+        body.add("chat_id", Long.toString(chat)); body.add("caption", caption); body.add("parse_mode", "HTML");
+        body.add("reply_parameters", mapper.writeValueAsString(Map.of("message_id", replyTo, "allow_sending_without_reply", true)));
+        // JPEG is returned as a document to preserve the exact hashed bytes. MP4 has an inline player.
+        body.add(photo ? "document" : "video", new FileSystemResource(output));
+        if (!photo) body.add("supports_streaming", "true");
+        try {
+            http.post().uri(api + (photo ? "sendDocument" : "sendVideo")).contentType(MediaType.MULTIPART_FORM_DATA).body(body)
+                    .exchange((request, response) -> decode(response.getBody().readNBytes(1_048_576)));
+        } catch (TelegramApiException ex) { throw ex; }
+        catch (Exception ex) { throw new TelegramApiException(5); }
     }
     private JsonNode call(String method, Object body) {
         try {
