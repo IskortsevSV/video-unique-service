@@ -103,6 +103,9 @@ public class TelegramPoller {
                     offset = next;
                 }
             } catch (Exception ex) {
+                if (!running || Thread.currentThread().isInterrupted()) {
+                    return;
+                }
                 int delay = ex instanceof TelegramApiException api ? api.retrySeconds() : 5;
                 LOG.warn(
                         "Telegram operation failed; retrying in {}s (details suppressed to protect"
@@ -119,13 +122,22 @@ public class TelegramPoller {
 
     private void dispatch(tools.jackson.databind.JsonNode update) throws IOException {
         var item = journal.stage(update);
-        if (item.done() || item.active()) {
+        if (item.done() || item.active() || !item.ready()) {
             return;
         }
         BotJournal.set(item);
         try {
             handler.handle(update);
             item.finishDispatch();
+        } catch (TelegramApiException ex) {
+            if (ex.global()) {
+                throw ex;
+            }
+            item.failed(ex);
+            LOG.warn(
+                    "Telegram update failed with code {}; permanent={}",
+                    ex.errorCode(),
+                    ex.permanent());
         } finally {
             BotJournal.set(null);
         }

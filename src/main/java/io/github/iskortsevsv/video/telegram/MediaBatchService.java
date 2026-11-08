@@ -158,6 +158,9 @@ public class MediaBatchService {
                     return;
                 }
                 progress.failRemaining();
+                if (ex instanceof TelegramApiException api && api.permanent()) {
+                    throw api;
+                }
                 String detail =
                         BotJournal.uncertain()
                                 ? "Не удалось подтвердить доставку последней копии. Проверьте чат"
@@ -185,6 +188,10 @@ public class MediaBatchService {
                 client.result(chat, reply, output, caption, photo);
                 return;
             } catch (TelegramApiException ex) {
+                if (ex.permanent()) {
+                    BotJournal.sending(false);
+                    throw ex;
+                }
                 if (!ex.rateLimited()) {
                     throw ex;
                 }

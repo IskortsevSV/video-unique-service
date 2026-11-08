@@ -204,8 +204,11 @@ public class TelegramHandler {
         } else {
             try {
                 client.edit(chat, message.path("message_id").asLong(), text, keyboard);
-            } catch (TelegramApiException ignored) {
-                /* Includes unchanged message on a repeated selection. */
+            } catch (TelegramApiException ex) {
+                // Repeated selection or an uneditable old message: nothing needs to be retried.
+                if (ex.errorCode() != 400) {
+                    throw ex;
+                }
             }
         }
     }

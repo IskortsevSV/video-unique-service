@@ -1,6 +1,7 @@
 package io.github.iskortsevsv.video.telegram;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -18,6 +19,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import io.github.iskortsevsv.video.config.TelegramProperties;
 
@@ -119,5 +122,69 @@ class TelegramClientTest {
                 42, 8, Files.writeString(directory.resolve("copy.mp4"), "MP4"), "caption", false);
         assertTrue(request.get().contains("name=\"video\""));
         assertTrue(request.get().contains("supports_streaming"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"400,true,false", "403,true,false", "404,true,false", "401,false,true",
+            "409,false,true", "429,false,true", "500,false,false", "503,false,false"})
+    void classifiesErrorsWithoutKeepingResponseBody(int code, boolean permanent, boolean global) {
+        response("/bot123:fake/sendMessage", code,
+                "{\"ok\":false,\"error_code\":" + code
+                        + ",\"description\":\"secret 123:fake\",\"parameters\":{\"retry_after\":7}}");
+        var error = assertThrows(TelegramApiException.class, () -> client.message(42, "hello"));
+        assertEquals(code, error.errorCode());
+        assertEquals(permanent, error.permanent());
+        assertEquals(global, error.global());
+        // HttpURLConnection can suppress the response body for an authentication challenge.
+        assertEquals(code == 401 ? 5 : 7, error.retrySeconds());
+        assertEquals(code == 429, error.rateLimited());
+        assertFalse(error.toString().contains("123:fake"));
+        assertNull(error.getCause());
+    }
+
+    @Test
+    void keepsErrorCodeFromTelegramEnvelope() {
+        response("/bot123:fake/sendMessage", 200, "{\"ok\":false,\"error_code\":403}");
+        assertTrue(assertThrows(TelegramApiException.class,
+                () -> client.message(42, "hello")).permanent());
+    }
+
+    @Test
+    void keepsHttpFailureWhenResponseIsNotJson() {
+        response("/bot123:fake/sendMessage", 403, "<html>123:fake forbidden</html>");
+        var error = assertThrows(TelegramApiException.class, () -> client.message(42, "hello"));
+        assertEquals(403, error.errorCode());
+        assertTrue(error.permanent());
+        assertNull(error.getCause());
+        assertFalse(error.toString().contains("123:fake"));
+    }
+
+    @Test
+    void expiredCallbackDoesNotPreventItsAction() throws Exception {
+        response("/bot123:fake/answerCallbackQuery", 400,
+                "{\"ok\":false,\"error_code\":400,\"description\":\"query is too old\"}");
+        response("/bot123:fake/editMessageText", 200, "{\"ok\":true,\"result\":{}}");
+        var config = new TelegramProperties(true, "123:fake", directory.resolve("offset"), Set.of());
+        var jobs = new BotJobs();
+        try {
+            var handler = new TelegramHandler(client, config, new BotUserStore(config), jobs, null);
+            var update = new tools.jackson.databind.json.JsonMapper().readTree("""
+                    {"callback_query":{"id":"expired","from":{"id":42},"data":"copies:5",
+                    "message":{"message_id":10,"chat":{"id":42,"type":"private"}}}}
+                    """);
+            assertDoesNotThrow(() -> handler.handle(update));
+            assertEquals(5, new BotUserStore(config).get(42).copies());
+            assertTrue(request.get().contains("message_id"));
+        } finally {
+            jobs.stop();
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({"429", "500", "401"})
+    void callbackDoesNotHideTemporaryOrGlobalFailure(int code) {
+        response("/bot123:fake/answerCallbackQuery", code, "{\"ok\":false}");
+        assertEquals(code, assertThrows(TelegramApiException.class,
+                () -> client.answer("callback")).errorCode());
     }
 }

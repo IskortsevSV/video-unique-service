@@ -43,9 +43,25 @@ public class BotJobs {
                         BotJournal.set(item);
                         try {
                             action.run();
-                            if (item != null && !workers.isShutdown() && !Thread.currentThread().isInterrupted()) {
+                            if (item != null
+                                    && !workers.isShutdown()
+                                    && !Thread.currentThread().isInterrupted()) {
                                 item.complete();
                             }
+                        } catch (TelegramApiException ex) {
+                            if (item != null
+                                    && !workers.isShutdown()
+                                    && !Thread.currentThread().isInterrupted()) {
+                                try {
+                                    item.failed(ex);
+                                } catch (java.io.IOException persistenceError) {
+                                    LOG.warn("Cannot persist Telegram job failure; recovery will retry");
+                                }
+                            }
+                            LOG.warn(
+                                    "Telegram job failed with code {}; permanent={}",
+                                    ex.errorCode(),
+                                    ex.permanent());
                         } catch (java.io.IOException ex) {
                             LOG.warn("Cannot persist Telegram job state; recovery will retry");
                         } finally {

@@ -100,7 +100,14 @@ public class TelegramClient {
 
     /** Подтверждает обработку callback-запроса Telegram. */
     public void answer(String id) {
-        call("answerCallbackQuery", Map.of("callback_query_id", id));
+        try {
+            call("answerCallbackQuery", Map.of("callback_query_id", id));
+        } catch (TelegramApiException ex) {
+            // An expired/already invalid callback acknowledgement must not block its action.
+            if (ex.errorCode() != 400) {
+                throw ex;
+            }
+        }
     }
 
     /** Регистрирует команды, меню и описание бота в Telegram. */
@@ -193,11 +200,17 @@ public class TelegramClient {
     }
 
     private JsonNode decode(byte[] bytes, int status) {
-        var result = mapper.readTree(bytes);
-        if (!result.path("ok").asBoolean()) {
+        JsonNode result;
+        try {
+            result = mapper.readTree(bytes);
+        } catch (RuntimeException ex) {
+            // Preserve a known HTTP refusal even when a proxy returns a non-JSON error body.
+            throw new TelegramApiException(5, status >= 400 ? status : 0);
+        }
+        if (status >= 400 || !result.path("ok").asBoolean()) {
             throw new TelegramApiException(
                     result.path("parameters").path("retry_after").asInt(5),
-                    status == 429 || result.path("error_code").asInt(0) == 429);
+                    status >= 400 ? status : result.path("error_code").asInt(0));
         }
         return result.path("result");
     }
@@ -225,7 +238,7 @@ public class TelegramClient {
                     .exchange(
                             (request, response) -> {
                                 if (!response.getStatusCode().is2xxSuccessful()) {
-                                    throw new TelegramApiException(5);
+                                    throw new TelegramApiException(5, response.getStatusCode().value());
                                 }
                                 try (var output = Files.newOutputStream(destination)) {
                                     byte[] buffer = new byte[8192];

@@ -82,7 +82,9 @@ final class BotJournal {
                             .toList()) {
                 try {
                     Properties data = validated(p);
-                    if (!"true".equals(data.getProperty("done"))) {
+                    if (!"true".equals(data.getProperty("done"))
+                            && Long.parseLong(data.getProperty("retry-at", "0"))
+                                    <= System.currentTimeMillis()) {
                         updates.add(decodeUpdate(data));
                     }
                 } catch (RuntimeException ex) {
@@ -149,7 +151,13 @@ final class BotJournal {
             throw new IllegalArgumentException("Invalid journal record");
         }
         if ("true".equals(data.getProperty("done"))) {
-            if (data.size() != 1) {
+            boolean failed =
+                    data.size() == 2
+                            && data.containsKey("failure-code")
+                            && new TelegramApiException(
+                                            1, Integer.parseInt(data.getProperty("failure-code")))
+                                    .permanent();
+            if (data.size() != 1 && !failed) {
                 throw new IllegalArgumentException("Invalid completion marker");
             }
             return data;
@@ -160,6 +168,9 @@ final class BotJournal {
             throw new IllegalArgumentException("Invalid update identity");
         }
         int sent = Integer.parseInt(data.getProperty("sent"));
+        if (Long.parseLong(data.getProperty("retry-at", "0")) < 0) {
+            throw new IllegalArgumentException("Invalid retry time");
+        }
         if (sent < 0 || sent > 10 || !Set.of("true", "false").contains(data.getProperty("sending", "false"))) {
             throw new IllegalArgumentException("Invalid delivery state");
         }
@@ -242,6 +253,24 @@ final class BotJournal {
 
         boolean active() {
             return owner.active.contains(id);
+        }
+
+        synchronized boolean ready() {
+            return Long.parseLong(data.getProperty("retry-at", "0")) <= System.currentTimeMillis();
+        }
+
+        /** Сохраняет отказ либо время повтора, не сбрасывая состояние доставки файла. */
+        synchronized void failed(TelegramApiException error) throws IOException {
+            if (error.permanent()) {
+                data.clear();
+                data.setProperty("done", "true");
+                data.setProperty("failure-code", Integer.toString(error.errorCode()));
+            } else {
+                data.setProperty(
+                        "retry-at",
+                        Long.toString(System.currentTimeMillis() + error.retrySeconds() * 1000L));
+            }
+            persist();
         }
 
         void scheduled() {
