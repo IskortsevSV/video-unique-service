@@ -1,18 +1,19 @@
 package io.github.iskortsevsv.video.telegram;
 
+import io.github.iskortsevsv.video.config.TelegramProperties;
+import io.github.iskortsevsv.video.dto.ProcessingOptions;
+import io.github.iskortsevsv.video.exception.VideoException;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+
+import tools.jackson.databind.JsonNode;
+
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
-import tools.jackson.databind.JsonNode;
-
-import io.github.iskortsevsv.video.config.TelegramProperties;
-import io.github.iskortsevsv.video.dto.ProcessingOptions;
-import io.github.iskortsevsv.video.exception.VideoException;
 
 /** Маршрутизирует сообщения и действия пользователей Telegram-бота. */
 @Component
@@ -95,7 +96,11 @@ public class TelegramHandler {
                 case "pay:basic", "pay:pro" -> {
                     client.screen(
                             id,
-                            "🧪 <b>Оплата пока не подключена</b>\n\nЭто демонстрационная кнопка. Деньги не списываются, подписка не оформляется.\nОба режима и до 10 копий доступны бесплатно — просто отправь файл.",
+                            "🧪 <b>Оплата пока не подключена</b>\n\n"
+                                + "Это демонстрационная кнопка. Деньги не списываются, подписка не"
+                                + " оформляется.\n"
+                                + "Оба режима и до 10 копий доступны бесплатно — просто отправь"
+                                + " файл.",
                             BotScreens.homeKeys());
                     return;
                 }
@@ -147,6 +152,15 @@ public class TelegramHandler {
                     caption.isBlank() && profile.hard()
                             ? new ProcessingOptions(1.04, .94)
                             : options(caption);
+            var snapshot = BotJournal.snapshot(profile, options);
+            profile =
+                    new BotUserStore.Profile(
+                            snapshot.mode(),
+                            snapshot.copies(),
+                            profile.originals(),
+                            profile.results(),
+                            profile.month());
+            var savedOptions = new ProcessingOptions(snapshot.speed(), snapshot.scale());
             long progress =
                     client.screen(
                             id,
@@ -169,17 +183,18 @@ public class TelegramHandler {
                                     fileId,
                                     isPhoto,
                                     selected,
-                                    options))) {
+                                    savedOptions))) {
                 client.edit(
                         id,
                         progress,
-                        "⏳ У вас уже есть задание или очередь заполнена. Дождитесь результата и отправьте файл снова.",
+                        "⏳ У вас уже есть задание или очередь заполнена. Дождитесь результата и"
+                            + " отправьте файл снова.",
                         BotScreens.homeKeys());
             }
         } catch (IllegalArgumentException ex) {
             client.message(id, "⚠️ Проверьте параметры. " + ex.getMessage());
         } catch (java.io.IOException ex) {
-            client.message(id, "Не удалось сохранить настройки. Попробуйте позже.");
+            throw new java.io.UncheckedIOException("Cannot persist Telegram state", ex);
         }
     }
 

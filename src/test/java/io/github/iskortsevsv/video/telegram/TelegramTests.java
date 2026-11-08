@@ -68,8 +68,8 @@ class TelegramTests {
         handler.handle(
                 json.readTree(
                         """
-                {"message":{"message_id":1,"chat":{"id":42,"type":"private"},"video":{"file_id":"abc","file_size":100},"caption":"speed=1.2"}}
-                """));
+                        {"message":{"message_id":1,"chat":{"id":42,"type":"private"},"video":{"file_id":"abc","file_size":100},"caption":"speed=1.2"}}
+                        """));
         verify(batches)
                 .run(
                         eq(42L),
@@ -107,8 +107,8 @@ class TelegramTests {
                 .handle(
                         json.readTree(
                                 """
-                {"message":{"chat":{"id":42,"type":"private"},"document":{"file_id":"abc","file_name":"x.mp4","file_size":20000001}}}
-                """));
+                                {"message":{"chat":{"id":42,"type":"private"},"document":{"file_id":"abc","file_name":"x.mp4","file_size":20000001}}}
+                                """));
         verifyNoInteractions(service);
         verify(client).message(eq(42L), contains("20 МБ"));
     }
@@ -125,5 +125,22 @@ class TelegramTests {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new TelegramProperties(true, "", directory, Set.of()));
+    }
+
+    @Test
+    void preventsTwoPollersSharingTheSameOffsetFile() throws Exception {
+        var config = config(Set.of());
+        var first =
+                new TelegramPoller(mock(TelegramClient.class), mock(TelegramHandler.class), config);
+        var second =
+                new TelegramPoller(mock(TelegramClient.class), mock(TelegramHandler.class), config);
+        first.start();
+        try {
+            assertThrows(IllegalStateException.class, second::start);
+        } finally {
+            first.stop();
+        }
+        second.start();
+        second.stop();
     }
 }

@@ -42,6 +42,7 @@ public class ProcessRunner {
      */
     public String run(
             List<String> command, Duration timeout, java.util.function.Consumer<String> lines) {
+        WindowsProcessJob.ensure();
         Process process;
         try {
             process = new ProcessBuilder(command).redirectErrorStream(true).start();

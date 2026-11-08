@@ -1,17 +1,17 @@
 package io.github.iskortsevsv.video.telegram;
 
-import java.nio.file.Files;
-import java.util.HashSet;
-import java.util.Set;
-
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Service;
-
 import io.github.iskortsevsv.video.dto.ProcessingOptions;
 import io.github.iskortsevsv.video.service.HashService;
 import io.github.iskortsevsv.video.service.PhotoProcessor;
 import io.github.iskortsevsv.video.service.VideoProcessor;
 import io.github.iskortsevsv.video.service.VideoService;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Service;
+
+import java.nio.file.Files;
+import java.util.HashSet;
+import java.util.Set;
 
 /** Организует скачивание, создание и отправку нескольких копий медиа. */
 @Service
@@ -48,6 +48,14 @@ public class MediaBatchService {
             boolean photo,
             BotUserStore.Profile profile,
             ProcessingOptions base) {
+        if (BotJournal.uncertain()) {
+            client.message(
+                    chat,
+                    "⚠️ После сбоя неизвестно, была ли отправлена последняя копия. Проверьте чат:"
+                        + " если её нет, отправьте исходный файл повторно. Автоматический повтор"
+                        + " отключён, чтобы не создать дубликат.");
+            return;
+        }
         try (var progress = new BatchProgress(client, chat, progressMessage, profile.copies())) {
             try {
                 service.withInput(
@@ -56,6 +64,10 @@ public class MediaBatchService {
                             String before = hashes.sha256(input);
                             Set<String> seen = new HashSet<>();
                             for (int i = 0; i < profile.copies(); i++) {
+                                if (i < BotJournal.sent()) {
+                                    progress.state(i, "Завершено ✅");
+                                    continue;
+                                }
                                 if (Thread.currentThread().isInterrupted()) {
                                     throw new java.io.IOException("Interrupted");
                                 }
@@ -87,7 +99,8 @@ public class MediaBatchService {
                                 String after = hashes.sha256(output);
                                 if (after.equals(before) || !seen.add(after)) {
                                     throw new IllegalArgumentException(
-                                            "Не удалось получить разные копии этого файла. Попробуйте другие настройки.");
+                                            "Не удалось получить разные копии этого файла."
+                                                    + " Попробуйте другие настройки.");
                                 }
                                 progress.state(i, "Отправка 📤");
                                 String caption =
@@ -109,9 +122,12 @@ public class MediaBatchService {
                                                         : "Скорость: " + options.speed() + "x\n")
                                                 + "Масштаб: "
                                                 + options.scale()
-                                                + "x\n\n✅ Обработка завершена.\n"
-                                                + "Чёрные поля — результат масштаба. Разные хеши не гарантируют уникальность для соцсетей.";
-                                client.result(chat, reply, output, caption, photo);
+                                                + "x\n\n"
+                                                + "✅ Обработка завершена.\n"
+                                                + "Чёрные поля — результат масштаба. Разные хеши не"
+                                                + " гарантируют уникальность для соцсетей.";
+                                sendWithRetry(chat, reply, output, caption, photo);
+                                BotJournal.delivered(i + 1);
                                 progress.state(i, "Завершено ✅");
                                 users.delivered(chat, i == 0);
                                 Files.deleteIfExists(output);
@@ -130,18 +146,55 @@ public class MediaBatchService {
                                         ? "🎁 В демонстрационном счётчике осталось "
                                                 + (3 - current.originals())
                                                 + " из 3 исходников."
-                                        : "🎁 Демонстрационные 3 исходника использованы. Тестовый доступ остаётся бесплатным.")
+                                        : "🎁 Демонстрационные 3 исходника использованы. Тестовый"
+                                                + " доступ остаётся бесплатным.")
                                 + "\n\nОтправь следующий файл или измени настройки 👇",
                         BotScreens.homeKeys());
             } catch (Exception ex) {
+                if (Thread.currentThread().isInterrupted()) {
+                    return;
+                }
                 progress.failRemaining();
                 String detail =
-                        ex instanceof IllegalArgumentException
-                                ? ex.getMessage()
-                                : "Не удалось завершить все копии. Уже отправленные доступны в чате. Попробуйте позже или отправьте меньший файл.";
+                        BotJournal.uncertain()
+                                ? "Не удалось подтвердить доставку последней копии. Проверьте чат"
+                                        + " перед повторной отправкой исходника."
+                                : ex instanceof IllegalArgumentException
+                                        ? ex.getMessage()
+                                        : "Не удалось завершить все копии. Уже отправленные"
+                                                + " доступны в чате. Попробуйте позже или отправьте"
+                                                + " меньший файл.";
+                // If notification fails, keep the journal entry so it can be retried.
+                client.message(chat, "⚠️ " + detail);
+            }
+        }
+    }
+
+    private void sendWithRetry(
+            long chat, long reply, java.nio.file.Path output, String caption, boolean photo)
+            throws java.io.IOException {
+        if (Files.size(output) > TelegramClient.MAX_OUTPUT) {
+            throw new IllegalArgumentException("Результат превышает лимит Telegram 50 МБ.");
+        }
+        for (int attempt = 0; ; attempt++) {
+            BotJournal.sending(true);
+            try {
+                client.result(chat, reply, output, caption, photo);
+                return;
+            } catch (TelegramApiException ex) {
+                if (!ex.rateLimited()) {
+                    throw ex;
+                }
+                // A 429 response confirms that this attempt was rejected.
+                BotJournal.sending(false);
+                if (attempt >= 2) {
+                    throw ex;
+                }
                 try {
-                    client.message(chat, "⚠️ " + detail);
-                } catch (TelegramApiException ignored) {
+                    Thread.sleep(ex.retrySeconds() * 1000L);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new java.io.IOException("Delivery retry interrupted");
                 }
             }
         }

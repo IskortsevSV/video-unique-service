@@ -1,10 +1,6 @@
 package io.github.iskortsevsv.video.telegram;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.util.Map;
+import io.github.iskortsevsv.video.config.TelegramProperties;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.io.FileSystemResource;
@@ -13,10 +9,15 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.client.RestClient;
+
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
-import io.github.iskortsevsv.video.config.TelegramProperties;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.Map;
 
 /** Вызывает Telegram Bot API и ограничивает размер передаваемых файлов. */
 @Component
@@ -131,7 +132,9 @@ public class TelegramClient {
                 "setMyDescription",
                 Map.of(
                         "description",
-                        "VUniq — обработка фото и видео. Режимы Basic и Hard, до 10 копий, прогресс и SHA-256. Тестовый доступ бесплатный; оплата отключена. Различие файлов не гарантирует уникальность для соцсетей."));
+                        "VUniq — обработка фото и видео. Режимы Basic и Hard, до 10 копий, прогресс"
+                            + " и SHA-256. Тестовый доступ бесплатный; оплата отключена. Различие"
+                            + " файлов не гарантирует уникальность для соцсетей."));
     }
 
     /** Отправляет результат обработки с подписью в ответ на исходное сообщение. */
@@ -161,7 +164,9 @@ public class TelegramClient {
                     .body(body)
                     .exchange(
                             (request, response) ->
-                                    decode(response.getBody().readNBytes(1_048_576)));
+                                    decode(
+                                            response.getBody().readNBytes(1_048_576),
+                                            response.getStatusCode().value()));
         } catch (TelegramApiException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -177,7 +182,9 @@ public class TelegramClient {
                     .body(body)
                     .exchange(
                             (request, response) ->
-                                    decode(response.getBody().readNBytes(1_048_576)));
+                                    decode(
+                                            response.getBody().readNBytes(1_048_576),
+                                            response.getStatusCode().value()));
         } catch (TelegramApiException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -185,10 +192,12 @@ public class TelegramClient {
         }
     }
 
-    private JsonNode decode(byte[] bytes) {
+    private JsonNode decode(byte[] bytes, int status) {
         var result = mapper.readTree(bytes);
         if (!result.path("ok").asBoolean()) {
-            throw new TelegramApiException(result.path("parameters").path("retry_after").asInt(5));
+            throw new TelegramApiException(
+                    result.path("parameters").path("retry_after").asInt(5),
+                    status == 429 || result.path("error_code").asInt(0) == 429);
         }
         return result.path("result");
     }
@@ -256,7 +265,9 @@ public class TelegramClient {
                     .body(body)
                     .exchange(
                             (request, response) ->
-                                    decode(response.getBody().readNBytes(1_048_576)));
+                                    decode(
+                                            response.getBody().readNBytes(1_048_576),
+                                            response.getStatusCode().value()));
         } catch (TelegramApiException ex) {
             throw ex;
         } catch (Exception ex) {
