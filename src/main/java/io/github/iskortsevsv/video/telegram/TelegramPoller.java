@@ -1,15 +1,21 @@
 package io.github.iskortsevsv.video.telegram;
 
-import io.github.iskortsevsv.video.config.TelegramProperties;
+import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import java.io.IOException;
-import java.nio.file.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import io.github.iskortsevsv.video.config.TelegramProperties;
+
+/** Получает обновления Telegram и сохраняет позицию до их обработки. */
 @Component
 @ConditionalOnProperty(name = "telegram.enabled", havingValue = "true")
 public class TelegramPoller {
@@ -19,24 +25,38 @@ public class TelegramPoller {
     private final Path state;
     private Thread worker;
     private volatile boolean running;
-    public TelegramPoller(TelegramClient client, TelegramHandler handler, TelegramProperties config) {
-        this.client = client; this.handler = handler; this.state = config.offsetFile().toAbsolutePath();
+
+    public TelegramPoller(
+            TelegramClient client, TelegramHandler handler, TelegramProperties config) {
+        this.client = client;
+        this.handler = handler;
+        this.state = config.offsetFile().toAbsolutePath();
     }
-    @PostConstruct void start() throws IOException {
+
+    @PostConstruct
+    void start() throws IOException {
         Files.createDirectories(state.getParent());
         long initial = Files.exists(state) ? Long.parseLong(Files.readString(state).strip()) : 0;
-        if (initial < 0) throw new IllegalArgumentException("Invalid Telegram offset");
+        if (initial < 0) {
+            throw new IllegalArgumentException("Invalid Telegram offset");
+        }
         running = true;
         worker = Thread.ofPlatform().daemon().name("telegram-poller").start(() -> poll(initial));
     }
+
     private void poll(long offset) {
         LOG.info("Telegram polling enabled");
         boolean configured = false;
         while (running && !Thread.currentThread().isInterrupted()) {
             try {
-                if (!configured) { client.configureMenu(); configured = true; }
+                if (!configured) {
+                    client.configureMenu();
+                    configured = true;
+                }
                 for (var update : client.updates(offset)) {
-                    if (!running) return;
+                    if (!running) {
+                        return;
+                    }
                     long next = update.path("update_id").asLong() + 1;
                     // Persist before effects: no automatic duplicate processing after restart.
                     save(next);
@@ -45,24 +65,42 @@ public class TelegramPoller {
                 }
             } catch (Exception ex) {
                 int delay = ex instanceof TelegramApiException api ? api.retrySeconds() : 5;
-                LOG.warn("Telegram operation failed; retrying in {}s (details suppressed to protect token)", delay);
-                try { Thread.sleep(delay * 1000L); }
-                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+                LOG.warn(
+                        "Telegram operation failed; retrying in {}s (details suppressed to protect token)",
+                        delay);
+                try {
+                    Thread.sleep(delay * 1000L);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
             }
         }
     }
+
     void save(long offset) throws IOException {
         Path temporary = state.resolveSibling(state.getFileName() + ".tmp");
         Files.writeString(temporary, Long.toString(offset));
-        try { Files.move(temporary, state, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE); }
-        catch (AtomicMoveNotSupportedException ex) { Files.move(temporary, state, StandardCopyOption.REPLACE_EXISTING); }
+        try {
+            Files.move(
+                    temporary,
+                    state,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException ex) {
+            Files.move(temporary, state, StandardCopyOption.REPLACE_EXISTING);
+        }
     }
-    @PreDestroy void stop() {
+
+    @PreDestroy
+    void stop() {
         running = false;
         if (worker != null) {
             worker.interrupt();
-            try { worker.join(65000); }
-            catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
+            try {
+                worker.join(65000);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+            }
         }
     }
 }
