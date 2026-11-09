@@ -146,3 +146,47 @@ Windows-скрипт запуска включает `-Djava.net.useSystemProxie
 В Windows приложение помещает JVM и создаваемые ею медиапроцессы в Job Object с `KILL_ON_JOB_CLOSE`, чтобы ОС завершала FFmpeg при аварийном завершении JVM. Если Windows не разрешает назначение Job Object, обработка не стартует. На других ОС принудительное завершение потомков при аварии JVM не гарантируется; обычная остановка и таймаут используют Java Process API. При первом запуске обрабатываются ожидающие сообщения Telegram. Остановка возможна через Ctrl+C; завершение сетевого запроса может занять до 60 секунд.
 
 Тесты бота используют локальный HTTP-сервер вместо Telegram: проверяют polling, скачивание, multipart-отправку, rate limit, ограничения размера, подписи, хеши в ответе, фильтрацию чатов и сохранение offset. Они не требуют токена и не отправляют сообщения реальным пользователям. При `RUN_FFMPEG_TESTS=true` в Windows также выполняются тесты аварийного завершения JVM, восстановления заданий и повторной отправки через локальный имитатор Telegram. Полная проверка живого бота требует локального токена и отправки видео пользователем.
+
+## VPS: запуск через systemd
+
+Конфигурация `deploy/systemd/video-unique-service.service` проверена на Ubuntu 22.04 с systemd 249, Java 25 и FFmpeg. Она рассчитана на VPS с 4 ГБ RAM: Java heap ограничен 768 МБ, вся служба вместе с FFmpeg — 3 ГБ. На сервере другой мощности лимиты нужно пересмотреть.
+
+Пути и права:
+
+- `/opt/video-unique-service/video-unique-service.jar` — приложение, владелец root, режим 0644.
+- `/opt/video-unique-service/java` — Linux Java 25 runtime, владелец root.
+- `/etc/video-unique-service/telegram.properties` — локальный секрет, владелец root:vuniq, режим 0640; каталог 0750. Файл содержит `telegram.enabled=true` и `telegram.token=...`. Не добавлять его в Git.
+- `/var/lib/video-unique-service/state` — offset, каталог `telegram-offset.txt.jobs` и каталог `users`; владелец vuniq:vuniq, доступ только владельцу.
+- `/var/lib/video-unique-service/tmp` — временные медиа, очисткой управляет приложение. Этот путь сохраняется между перезапусками, чтобы находить остатки аварийных заданий.
+
+Для первой установки нужны системный пользователь и группа `vuniq`, указанные каталоги, Java 25, `/usr/bin/ffmpeg` и `/usr/bin/ffprobe`. Установите unit в `/etc/systemd/system/video-unique-service.service`. Перед включением polling остановите экземпляр на старом компьютере и перенесите актуальные offset, журнал и профили из `.local`. Файл блокировки переносить не нужно. Одновременный запуск бота с тем же токеном на VPS и в IntelliJ IDEA недопустим.
+
+Команды на сервере:
+
+```sh
+sudo systemd-analyze verify /etc/systemd/system/video-unique-service.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now video-unique-service
+sudo systemctl status video-unique-service --no-pager
+sudo journalctl -u video-unique-service -n 100 --no-pager
+sudo systemctl restart video-unique-service
+sudo systemctl stop video-unique-service
+```
+
+Служба работает от `vuniq`, автоматически запускается при загрузке ОС и перезапускается после сбоя. `KillMode=control-group` завершает также дочерние процессы при остановке службы. `ProtectSystem=strict`, `ProtectHome=true` и `NoNewPrivileges=true` ограничивают доступ процесса. API слушает только `127.0.0.1:8080`; открывать порт 8080 в интернет не требуется. Для Swagger можно использовать SSH-туннель `ssh -L 8080:127.0.0.1:8080 USER@VPS`, затем открыть `http://localhost:8080/swagger-ui/index.html`.
+
+### Обновление через GitHub Actions
+
+Pull Request в `main` запускает проверку. Push в `main` запускает Maven `clean verify` с Java 25 и FFmpeg на Linux, затем отправляет проверенный JAR на VPS. Тесты, предназначенные только для Windows, запускаются отдельно на Windows. Окружение GitHub `production` ограничено веткой `main`. Оно содержит переменную `VPS_HOST` и секреты `VPS_SSH_KEY` и `VPS_KNOWN_HOSTS`.
+
+На сервере учётная запись `vuniq-deploy` принимает ключ GitHub Actions с принудительной командой. Ключ разрешает запуск только установленного скрипта `/usr/local/sbin/vuniq-deploy` через sudo. Установочная копия скрипта принадлежит root. Служба приложения работает от `vuniq`.
+
+Скрипт сверяет SHA-256, сохраняет текущий JAR, запускает службу и проверяет ответ OpenAPI и стабильность процесса. Если запуск или проверка не удались, скрипт возвращает предыдущий JAR, а GitHub помечает деплой как неуспешный. Токен и состояние пользователей хранятся отдельно от JAR.
+
+Для ручного отката откройте **Actions → Build and deploy VUniq → Run workflow**, выберите `main` и запустите workflow. Ручной запуск этого workflow выполняет откат на предыдущий JAR. Через SSH с правами администратора то же действие выполняет команда:
+
+```sh
+printf 'rollback\n' | sudo /usr/local/sbin/vuniq-deploy
+```
+
+Успешные переключения записываются в `/opt/video-unique-service/releases.log`. Сверить текущую сборку можно через `sha256sum /opt/video-unique-service/video-unique-service.jar`.
