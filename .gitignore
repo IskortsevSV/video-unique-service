@@ -1,0 +1,7 @@
+/target/
+/.idea/
+*.iml
+*.log
+/tmp/
+/.local/
+/.env
