@@ -8,9 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.InetSocketAddress;
+import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -23,6 +25,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import io.github.iskortsevsv.video.config.TelegramProperties;
+import tools.jackson.databind.json.JsonMapper;
 
 /** Проверяет взаимодействие с Telegram API через локальный HTTP-сервер. */
 class TelegramClientTest {
@@ -104,6 +107,59 @@ class TelegramClientTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> client.download("file-id", directory.resolve("input.mp4")));
+    }
+
+    @Test
+    void localApiMovesA150MbDownloadAndSendsTheResultByPath() throws Exception {
+        Path cache = Files.createDirectory(directory.resolve("media"));
+        Path source = cache.resolve("video.mp4");
+        try (var file = new RandomAccessFile(source.toFile(), "rw")) {
+            file.setLength(150_000_000);
+        }
+        var local = localClient(cache, source);
+        Path output = directory.resolve("processed.mp4");
+        local.download("file-id", output);
+        assertEquals(150_000_000, Files.size(output));
+        assertFalse(Files.exists(source));
+
+        response("/bot123:fake/sendVideo", 200, "{\"ok\":true,\"result\":{}}");
+        local.result(42, 8, output, "caption", false);
+        assertTrue(request.get().contains(output.toUri().toASCIIString()));
+    }
+
+    @Test
+    void localApiRejectsLargerFilesEvenWhenMetadataOmitsTheSize() throws Exception {
+        Path cache = Files.createDirectory(directory.resolve("media"));
+        Path source = cache.resolve("oversized.mp4");
+        try (var file = new RandomAccessFile(source.toFile(), "rw")) {
+            file.setLength(150_000_001);
+        }
+        var local = localClient(cache, source);
+        Path workspace = Files.createDirectory(directory.resolve("workspace"));
+        var error = assertThrows(
+                IllegalArgumentException.class,
+                () -> local.download("file-id", workspace.resolve("input.mp4")));
+        assertTrue(error.getMessage().contains("150 МБ"));
+        assertFalse(Files.exists(source));
+    }
+
+    @Test
+    void localApiRejectsFilesOutsideItsMediaDirectory() throws Exception {
+        Path cache = Files.createDirectory(directory.resolve("media"));
+        Path outside = Files.writeString(directory.resolve("outside.mp4"), "outside");
+        var local = localClient(cache, outside);
+        Path destination = directory.resolve("input.mp4");
+        assertThrows(IllegalArgumentException.class, () -> local.download("file-id", destination));
+        assertTrue(Files.isRegularFile(outside));
+        assertFalse(Files.exists(destination));
+    }
+
+    private TelegramClient localClient(Path cache, Path source) {
+        var config = new TelegramProperties(
+                true, "123:fake", directory.resolve("offset"), Set.of(), server.getAddress().getPort(), cache);
+        response("/bot123:fake/getFile", 200, new JsonMapper().writeValueAsString(
+                Map.of("ok", true, "result", Map.of("file_path", source.toString()))));
+        return new TelegramClient(config);
     }
 
     @Test

@@ -37,7 +37,7 @@ public class TelegramPoller {
         this.jobs = jobs;
         this.client = client;
         this.handler = handler;
-        this.state = config.offsetFile().toAbsolutePath();
+        this.state = config.pollingOffsetFile().toAbsolutePath();
         this.journal = new BotJournal(this.state);
     }
 

@@ -105,7 +105,7 @@ public class TelegramHandler {
                     return;
                 }
                 case "/help", "help", "upload" -> {
-                    show(id, callback, message, BotScreens.help(), BotScreens.backKeys());
+                    show(id, callback, message, BotScreens.help(config.maxInputMb()), BotScreens.backKeys());
                     return;
                 }
                 case "/start", "/menu", "home" -> {
@@ -132,13 +132,10 @@ public class TelegramHandler {
                                     ? message.path("video")
                                     : message.path("document");
             if (media == null || !media.has("file_id")) {
-                client.screen(id, BotScreens.help(), BotScreens.homeKeys());
+                client.screen(id, BotScreens.help(config.maxInputMb()), BotScreens.homeKeys());
                 return;
             }
-            if (media.path("file_size").asLong(0) > TelegramClient.MAX_INPUT) {
-                throw new IllegalArgumentException(
-                        "Файл превышает 20 МБ. Отправьте файл меньшего размера.");
-            }
+            config.checkInputSize(media.path("file_size").asLong(0));
             String name =
                     media.path("file_name")
                             .asText(photo ? "photo.jpg" : message.has("video") ? "video.mp4" : "")

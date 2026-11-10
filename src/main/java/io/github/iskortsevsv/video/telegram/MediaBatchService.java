@@ -179,9 +179,7 @@ public class MediaBatchService {
     private void sendWithRetry(
             long chat, long reply, java.nio.file.Path output, String caption, boolean photo)
             throws java.io.IOException {
-        if (Files.size(output) > TelegramClient.MAX_OUTPUT) {
-            throw new IllegalArgumentException("Результат превышает лимит Telegram 50 МБ.");
-        }
+        client.checkOutputSize(output);
         for (int attempt = 0; ; attempt++) {
             BotJournal.sending(true);
             try {

@@ -16,6 +16,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.Map;
 
@@ -23,25 +24,33 @@ import java.util.Map;
 @Component
 @ConditionalOnProperty(name = "telegram.enabled", havingValue = "true")
 public class TelegramClient {
-    public static final long MAX_INPUT = 20_000_000;
-    public static final long MAX_OUTPUT = 50_000_000;
+    private final TelegramProperties properties;
     private final RestClient http;
+    private final RestClient mediaHttp;
     private final String api;
     private final String files;
     private final JsonMapper mapper = new JsonMapper();
 
     @org.springframework.beans.factory.annotation.Autowired
     public TelegramClient(TelegramProperties properties) {
-        this(properties, "https://api.telegram.org");
+        this(properties, properties.localApiFiles() == null
+                ? "https://api.telegram.org"
+                : "http://127.0.0.1:" + properties.localApiPort());
     }
 
     TelegramClient(TelegramProperties properties, String base) {
-        var factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(Duration.ofSeconds(10));
-        factory.setReadTimeout(Duration.ofSeconds(60));
-        http = RestClient.builder().requestFactory(factory).build();
+        this.properties = properties;
+        http = httpClient(Duration.ofSeconds(60));
+        mediaHttp = properties.localApiFiles() == null ? http : httpClient(Duration.ofMinutes(5));
         api = base + "/bot" + properties.token() + "/";
         files = base + "/file/bot" + properties.token() + "/";
+    }
+
+    private static RestClient httpClient(Duration readTimeout) {
+        var factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(10));
+        factory.setReadTimeout(readTimeout);
+        return RestClient.builder().requestFactory(factory).build();
     }
 
     /** Получает очередные обновления Telegram после заданной позиции. */
@@ -147,9 +156,7 @@ public class TelegramClient {
     /** Отправляет результат обработки с подписью в ответ на исходное сообщение. */
     public void result(long chat, long replyTo, Path output, String caption, boolean photo)
             throws IOException {
-        if (Files.size(output) > MAX_OUTPUT) {
-            throw new IllegalArgumentException("Результат превышает лимит Telegram 50 МБ.");
-        }
+        checkOutputSize(output);
         var body = new LinkedMultiValueMap<String, Object>();
         body.add("chat_id", Long.toString(chat));
         body.add("caption", caption);
@@ -160,12 +167,12 @@ public class TelegramClient {
                         Map.of("message_id", replyTo, "allow_sending_without_reply", true)));
         // JPEG is returned as a document to preserve the exact hashed bytes. MP4 has an inline
         // player.
-        body.add(photo ? "document" : "video", new FileSystemResource(output));
+        body.add(photo ? "document" : "video", uploadSource(output));
         if (!photo) {
             body.add("supports_streaming", "true");
         }
         try {
-            http.post()
+            mediaHttp.post()
                     .uri(api + (photo ? "sendDocument" : "sendVideo"))
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(body)
@@ -182,8 +189,12 @@ public class TelegramClient {
     }
 
     private JsonNode call(String method, Object body) {
+        return call(http, method, body);
+    }
+
+    private JsonNode call(RestClient transport, String method, Object body) {
         try {
-            return http.post()
+            return transport.post()
                     .uri(api + method)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(body)
@@ -224,13 +235,16 @@ public class TelegramClient {
      * @throws TelegramApiException если Telegram недоступен или вернул ошибку
      */
     public void download(String fileId, Path destination) {
-        var file = call("getFile", Map.of("file_id", fileId));
+        var file = call(mediaHttp, "getFile", Map.of("file_id", fileId));
         String path = file.path("file_path").asText("");
-        if (file.path("file_size").asLong(0) > MAX_INPUT
-                || path.isBlank()
-                || !path.matches("[A-Za-z0-9_./-]+")
-                || path.contains("..")) {
-            throw new IllegalArgumentException("Файл недоступен или превышает 20 МБ.");
+        long declaredSize = file.path("file_size").asLong(0);
+        if (properties.localApiFiles() != null) {
+            takeLocalDownload(path, destination, declaredSize);
+            return;
+        }
+        properties.checkInputSize(declaredSize);
+        if (!path.matches("[A-Za-z0-9_./-]+") || path.contains("..")) {
+            throw new IllegalArgumentException("Файл Telegram недоступен.");
         }
         try {
             http.get()
@@ -246,10 +260,7 @@ public class TelegramClient {
                                     int count;
                                     while ((count = response.getBody().read(buffer)) != -1) {
                                         total += count;
-                                        if (total > MAX_INPUT) {
-                                            throw new IllegalArgumentException(
-                                                    "Файл превышает 20 МБ.");
-                                        }
+                                        properties.checkInputSize(total);
                                         output.write(buffer, 0, count);
                                     }
                                 }
@@ -262,17 +273,47 @@ public class TelegramClient {
         }
     }
 
+    private void takeLocalDownload(String path, Path destination, long declaredSize) {
+        try {
+            Path source = Path.of(path);
+            if (!source.isAbsolute()) {
+                throw new IllegalArgumentException("Файл Telegram недоступен.");
+            }
+            Path root = properties.localApiFiles().toRealPath();
+            source = source.toRealPath();
+            if (!source.startsWith(root) || !Files.isRegularFile(source)) {
+                throw new IllegalArgumentException("Файл Telegram недоступен.");
+            }
+            // Transfer ownership to the crash-safe workspace without leaving a second copy.
+            Files.move(source, destination, StandardCopyOption.ATOMIC_MOVE);
+            properties.checkInputSize(Math.max(declaredSize, Files.size(destination)));
+        } catch (IOException ex) {
+            throw new TelegramApiException(5);
+        } catch (java.nio.file.InvalidPathException ex) {
+            throw new IllegalArgumentException("Файл Telegram недоступен.");
+        }
+    }
+
+    /** Проверяет размер результата до записи попытки отправки в журнал. */
+    void checkOutputSize(Path output) throws IOException {
+        properties.checkOutputSize(Files.size(output));
+    }
+
+    private Object uploadSource(Path output) {
+        return properties.localApiFiles() == null
+                ? new FileSystemResource(output)
+                : output.toAbsolutePath().toUri().toASCIIString();
+    }
+
     /** Отправляет файл как документ с подписью. */
     public void document(long chat, Path output, String caption) throws IOException {
-        if (Files.size(output) > MAX_OUTPUT) {
-            throw new IllegalArgumentException("Результат превышает лимит Telegram 50 МБ.");
-        }
+        checkOutputSize(output);
         var body = new LinkedMultiValueMap<String, Object>();
         body.add("chat_id", Long.toString(chat));
         body.add("caption", caption);
-        body.add("document", new FileSystemResource(output));
+        body.add("document", uploadSource(output));
         try {
-            http.post()
+            mediaHttp.post()
                     .uri(api + "sendDocument")
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(body)

@@ -98,9 +98,10 @@ public final class BotScreens {
                         List.of(button("← Главное меню", "home"))));
     }
 
-    static String help() {
+    static String help(int maxInputMb) {
         return "📖 <b>Как это работает</b>\n\n1. Выбери режим и 1–10 копий в /settings.\n"
-                + "2. Отправь MP4/MOV или фото JPEG/PNG до 20 МБ.\n3. Следи за прогрессом и получай результаты.\n\n"
+                + "2. Отправь MP4/MOV или фото JPEG/PNG до " + maxInputMb + " МБ.\n"
+                + "3. Следи за прогрессом и получай результаты.\n\n"
                 + "Фото — до 20 мегапикселей; результат JPEG-файлом. Видео — MP4 с плеером. "
                 + "Для точного исходного хеша отправляй медиа как файл.\n\n"
                 + "Подпись необязательна: <code>speed=1.01 scale=0.98</code>. "

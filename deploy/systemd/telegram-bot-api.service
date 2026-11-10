@@ -1,0 +1,24 @@
+[Unit]
+Description=Local Telegram Bot API for Video Unique Service
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=vuniq
+Group=vuniq
+StateDirectory=video-unique-service
+StateDirectoryMode=0700
+UMask=0077
+WorkingDirectory=/var/lib/video-unique-service
+EnvironmentFile=/etc/video-unique-service/telegram-bot-api.env
+ExecStartPre=/usr/bin/mkdir -p telegram-api/state telegram-api/media telegram-api/tmp
+ExecStart=/usr/local/bin/telegram-bot-api --local --http-ip-address=127.0.0.1 --http-port=8081 --dir=/var/lib/video-unique-service/telegram-api/state --files-dir=/var/lib/video-unique-service/telegram-api/media --temp-dir=/var/lib/video-unique-service/telegram-api/tmp --filter=${TELEGRAM_BOT_ID}/1000000000000000000 --verbosity=1
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
