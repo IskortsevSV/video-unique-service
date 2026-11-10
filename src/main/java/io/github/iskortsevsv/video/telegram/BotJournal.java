@@ -15,6 +15,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Properties;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /** Локальный журнал принятых обновлений. Медиафайлы в журнале не сохраняются. */
@@ -175,7 +176,7 @@ final class BotJournal {
             throw new IllegalArgumentException("Invalid delivery state");
         }
         boolean snapshot = data.containsKey("mode") || data.containsKey("copies")
-                || data.containsKey("speed") || data.containsKey("scale");
+                || data.containsKey("speed") || data.containsKey("scale") || data.containsKey("variant-key");
         if (snapshot) {
             int copies = Integer.parseInt(data.getProperty("copies"));
             if (!Set.of("basic", "hard").contains(data.getProperty("mode")) || copies < 1 || copies > 10 || sent > copies) {
@@ -183,6 +184,9 @@ final class BotJournal {
             }
             new io.github.iskortsevsv.video.dto.ProcessingOptions(
                     Double.parseDouble(data.getProperty("speed")), Double.parseDouble(data.getProperty("scale")));
+            if (data.containsKey("variant-key")) {
+                UUID.fromString(data.getProperty("variant-key"));
+            }
         } else if (sent != 0 || Boolean.parseBoolean(data.getProperty("sending"))) {
             throw new IllegalArgumentException("Missing job settings");
         }
@@ -302,6 +306,7 @@ final class BotJournal {
                 data.setProperty("copies", Integer.toString(profile.copies()));
                 data.setProperty("speed", Double.toString(options.speed()));
                 data.setProperty("scale", Double.toString(options.scale()));
+                data.setProperty("variant-key", UUID.randomUUID().toString());
                 persist();
             }
             return new Snapshot(
@@ -313,6 +318,10 @@ final class BotJournal {
 
         synchronized int sent() {
             return Integer.parseInt(data.getProperty("sent", "0"));
+        }
+
+        synchronized String variantKey() {
+            return data.getProperty("variant-key");
         }
 
         synchronized boolean uncertain() {
@@ -368,6 +377,11 @@ final class BotJournal {
 
     static int sent() {
         return current() == null ? 0 : current().sent();
+    }
+
+    /** Возвращает сохранённый ключ вариантов или null для старого задания. */
+    static String variantKey() {
+        return current() == null ? UUID.randomUUID().toString() : current().variantKey();
     }
 
     static boolean uncertain() {

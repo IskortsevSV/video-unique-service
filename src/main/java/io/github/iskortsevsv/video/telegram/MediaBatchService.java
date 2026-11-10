@@ -65,6 +65,7 @@ public class MediaBatchService {
                             Set<String> seen = new HashSet<>();
                             var info = !photo && BotJournal.sent() < profile.copies()
                                     ? videos.probe(input) : null;
+                            String variantKey = photo ? null : BotJournal.variantKey();
                             for (int i = 0; i < profile.copies(); i++) {
                                 if (i < BotJournal.sent()) {
                                     progress.state(i, "Завершено ✅");
@@ -97,7 +98,8 @@ public class MediaBatchService {
                                                                     + "] "
                                                                     + percent
                                                                     + "%"),
-                                            info);
+                                            info,
+                                            variantKey == null ? null : variantKey + "-" + i);
                                 }
                                 String after = hashes.sha256(output);
                                 if (after.equals(before) || !seen.add(after)) {
@@ -127,7 +129,10 @@ public class MediaBatchService {
                                                 + options.scale()
                                                 + "x\n\n"
                                                 + "✅ Обработка завершена.\n"
-                                                + "Чёрные поля — результат масштаба. Разные хеши не"
+                                                + (variantKey != null && profile.hard()
+                                                        ? "Hard приближает центр кадра и меняет цвет. "
+                                                        : "Чёрные поля — результат масштаба. ")
+                                                + "Разные хеши не"
                                                 + " гарантируют уникальность для соцсетей.";
                                 sendWithRetry(chat, reply, output, caption, photo);
                                 BotJournal.delivered(i + 1);

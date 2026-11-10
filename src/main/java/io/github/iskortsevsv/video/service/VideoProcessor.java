@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Random;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -97,11 +98,21 @@ public class VideoProcessor {
     /** Кодирует копию, используя метаданные именно переданного исходного файла. */
     public void process(Path input, Path output, ProcessingOptions options, boolean hard,
             java.util.function.IntConsumer progress, VideoInfo info) {
+        process(input, output, options, hard, progress, info, null);
+    }
+
+    /** Кодирует вариант с воспроизводимыми настройками кадрирования и цвета. */
+    public void process(Path input, Path output, ProcessingOptions options, boolean hard,
+            java.util.function.IntConsumer progress, VideoInfo info, String variantId) {
         double duration = info.durationSeconds() / options.speed();
         var args =
                 new ArrayList<>(
                         command(input, output, options, info.audio()));
-        if (hard) {
+        if (variantId != null) {
+            int index = args.indexOf("-vf") + 1;
+            args.set(index, args.get(index) + variantFilter(variantId, hard));
+            args.addAll(args.size() - 1, List.of("-metadata", "comment=VUniq variant " + variantId));
+        } else if (hard) {
             int index = args.indexOf("-vf") + 1;
             args.set(index, args.get(index) + ",eq=contrast=1.04:saturation=1.06:brightness=0.01");
         }
@@ -128,6 +139,25 @@ public class VideoProcessor {
                     }
                 });
         progress.accept(100);
+    }
+
+    private static String variantFilter(String variantId, boolean hard) {
+        var random = new Random(variantId.hashCode());
+        double contrast = hard ? random.nextDouble(1.07, 1.15) : random.nextDouble(.99, 1.025);
+        double saturation = hard ? random.nextDouble(1.08, 1.20) : random.nextDouble(.96, 1.04);
+        double brightness = hard ? random.nextDouble(-.025, .025) : random.nextDouble(-.01, .01);
+        String color = String.format(Locale.ROOT,
+                ",eq=contrast=%.5f:saturation=%.5f:brightness=%.5f", contrast, saturation, brightness);
+        if (!hard) {
+            return color;
+        }
+        double zoom = random.nextDouble(1.08, 1.14);
+        // Round up when enlarging, then round down to recover the original even dimensions.
+        String crop = String.format(Locale.ROOT,
+                ",scale=ceil(iw*%.8f/2)*2:ceil(ih*%.8f/2)*2"
+                        + ",crop=trunc((iw/%.8f+0.000001)/2)*2:trunc((ih/%.8f+0.000001)/2)*2,setsar=1",
+                zoom, zoom, zoom, zoom);
+        return crop + color;
     }
 
     List<String> command(Path input, Path output, ProcessingOptions options, boolean audio) {
