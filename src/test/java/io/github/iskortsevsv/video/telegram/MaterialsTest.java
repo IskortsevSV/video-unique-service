@@ -88,6 +88,38 @@ class MaterialsTest {
     }
 
     @Test
+    void referenceRequiresAnAdminForCommandsButtonsAndPreviouslyAuthorizedReplies() throws Exception {
+        var config = config(true);
+        var client = mock(TelegramClient.class);
+        var jobs = mock(BotJobs.class);
+        var archive = new MaterialArchive(config, null);
+        var flow = new TelegramMaterials(client, config, new FeedbackStore(config), archive, jobs);
+        var botMessage = json.readTree("{\"from\":{\"is_bot\":true}}");
+        String reference = "r" + "1".repeat(32);
+        String feedback = "f" + "2".repeat(32);
+
+        assertTrue(flow.handle(43, botMessage, "/reference", false));
+        assertTrue(flow.handle(43, botMessage, "mat:" + reference + ":consent", true));
+        assertTrue(flow.handle(42, botMessage, "mat:" + feedback + ":start", true));
+        verify(client, times(2)).message(43, "Команда /reference доступна администратору.");
+        verify(client).message(42, "Приём материалов для этого действия выключен.");
+        verify(client, never()).screen(anyLong(), anyString(), any());
+        assertFalse(Files.exists(directory.resolve("feedback-materials")));
+
+        var oldConfig = new TelegramProperties(true, "123:fake", config.offsetFile(), Set.of(),
+                8081, null, Set.of(42L, 43L), false, true);
+        var oldFlow = new TelegramMaterials(client, oldConfig, new FeedbackStore(oldConfig), archive, jobs);
+        oldFlow.handle(43, botMessage, "mat:" + reference + ":consent", true);
+        when(client.filePrompt(eq(43L), anyString())).thenReturn(10L);
+        oldFlow.handle(43, botMessage, "mat:" + reference + ":COPY", true);
+
+        assertTrue(flow.handle(43, reply(10), "", false));
+        verify(client, times(3)).message(43, "Команда /reference доступна администратору.");
+        verify(client, never()).download(anyString(), any());
+        verifyNoInteractions(jobs);
+    }
+
+    @Test
     void reportsPhotoPairAndRejectsInvalidReplacementBeforeDeletingOldFile() throws Exception {
         var config = config(true);
         var probe = mock(ProcessRunner.class);
@@ -151,7 +183,7 @@ class MaterialsTest {
 
     private TelegramProperties config(boolean enabled) {
         return new TelegramProperties(true, "123:fake", directory.resolve("offset"), Set.of(),
-                8081, null, Set.of(), enabled);
+                8081, null, Set.of(42L), false, enabled);
     }
 
     private Path png(String name, int width) throws Exception {

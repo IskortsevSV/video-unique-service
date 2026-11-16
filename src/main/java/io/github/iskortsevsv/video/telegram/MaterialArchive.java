@@ -51,7 +51,7 @@ class MaterialArchive {
 
     @PostConstruct
     void start() {
-        if (config.feedbackUploadsEnabled()) {
+        if (config.feedbackUploadsEnabled() || config.referenceEnabled() || Files.isDirectory(root)) {
             sweepSafely();
             timer = Executors.newSingleThreadScheduledExecutor(
                     Thread.ofPlatform().daemon().name("material-archive-cleaner").factory());

@@ -74,6 +74,6 @@ class FeedbackTest {
 
     private TelegramProperties config() {
         return new TelegramProperties(true, "123:fake", directory.resolve("offset"), Set.of(),
-                8081, null, Set.of(42L), false);
+                8081, null, Set.of(42L), false, false);
     }
 }

@@ -47,12 +47,14 @@ class TelegramMaterials {
         if (!materialReply && !reference && !materialButton) {
             return false;
         }
-        if (!config.feedbackUploadsEnabled()) {
+        if (!config.feedbackUploadsEnabled() && !config.referenceEnabled()) {
             client.message(chat, "Приём материалов на этом экземпляре выключен.");
             return true;
         }
         if (reference) {
-            consent(chat, "r" + UUID.randomUUID().toString().replace("-", ""), true);
+            if (canUseMaterials(chat, true)) {
+                consent(chat, "r" + UUID.randomUUID().toString().replace("-", ""), true);
+            }
         } else if (materialReply) {
             acceptReply(chat, message, reply);
         } else {
@@ -64,6 +66,18 @@ class TelegramMaterials {
         return true;
     }
 
+    private boolean canUseMaterials(long chat, boolean reference) {
+        if (!(reference ? config.referenceEnabled() : config.feedbackUploadsEnabled())) {
+            client.message(chat, "Приём материалов для этого действия выключен.");
+            return false;
+        }
+        if (reference && !config.feedbackAdminIds().contains(chat)) {
+            client.message(chat, "Команда /reference доступна администратору.");
+            return false;
+        }
+        return true;
+    }
+
     private void handleButton(long chat, String action) throws IOException {
         String[] fields = action.split(":", -1);
         if (fields.length != 3 || !fields[1].matches("[fr][a-f0-9]{32}")) {
@@ -71,6 +85,9 @@ class TelegramMaterials {
         }
         String id = fields[1];
         boolean reference = id.startsWith("r");
+        if (!canUseMaterials(chat, reference)) {
+            return;
+        }
         String operation = fields[2];
         if ("start".equals(operation) || "consent".equals(operation)) {
             if (!reference && feedback.owned(id.substring(1), chat).getProperty("result") == null) {
@@ -120,6 +137,9 @@ class TelegramMaterials {
             throw new IllegalArgumentException("Запрос устарел. Откройте обращение и выберите роль файла снова.");
         }
         String id = prompt.getProperty("case");
+        if (!canUseMaterials(chat, id.startsWith("r"))) {
+            return;
+        }
         archive.requireOwner(id, chat);
         var role = MaterialArchive.Role.valueOf(prompt.getProperty("role"));
         JsonNode media = message.path("document");

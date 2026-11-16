@@ -18,3 +18,4 @@ telegram:
   allowed-chat-ids: ${TELEGRAM_ALLOWED_CHAT_IDS:}
   feedback-admin-ids: ${TELEGRAM_FEEDBACK_ADMIN_IDS:}
   feedback-uploads-enabled: ${TELEGRAM_FEEDBACK_UPLOADS_ENABLED:false}
+  reference-enabled: ${TELEGRAM_REFERENCE_ENABLED:false}

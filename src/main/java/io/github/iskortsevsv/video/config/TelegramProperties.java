@@ -17,7 +17,8 @@ public record TelegramProperties(
         @DefaultValue("8081") int localApiPort,
         Path localApiFiles,
         @DefaultValue Set<Long> feedbackAdminIds,
-        @DefaultValue("false") boolean feedbackUploadsEnabled) {
+        @DefaultValue("false") boolean feedbackUploadsEnabled,
+        @DefaultValue("false") boolean referenceEnabled) {
     private static final long BYTES_PER_MB = 1_000_000L;
 
     @ConstructorBinding
@@ -43,7 +44,7 @@ public record TelegramProperties(
 
     public TelegramProperties(boolean enabled, String token, Path offsetFile, Set<Long> allowedChatIds,
             int localApiPort, Path localApiFiles) {
-        this(enabled, token, offsetFile, allowedChatIds, localApiPort, localApiFiles, Set.of(), false);
+        this(enabled, token, offsetFile, allowedChatIds, localApiPort, localApiFiles, Set.of(), false, false);
     }
 
     /** Возвращает входной лимит в десятичных мегабайтах для выбранного Bot API. */
