@@ -119,6 +119,24 @@ public class TelegramClient {
         }
     }
 
+    /** Обновляет только кнопки, сохраняя исходное сообщение и его медиа. */
+    void editButtons(long chat, long message, Object keyboard) {
+        try {
+            call("editMessageReplyMarkup", Map.of("chat_id", chat, "message_id", message,
+                    "reply_markup", keyboard));
+        } catch (TelegramApiException ex) {
+            if (ex.errorCode() != 400) {
+                throw ex;
+            }
+        }
+    }
+
+    /** Отправляет запрос, на который клиент Telegram предлагает ответить. */
+    long filePrompt(long chat, String text) {
+        return call("sendMessage", Map.of("chat_id", chat, "text", text,
+                "reply_markup", Map.of("force_reply", true))).path("message_id").asLong();
+    }
+
     /** Регистрирует команды, меню и описание бота в Telegram. */
     public void configureMenu() {
         call(
@@ -156,11 +174,20 @@ public class TelegramClient {
     /** Отправляет результат обработки с подписью в ответ на исходное сообщение. */
     public void result(long chat, long replyTo, Path output, String caption, boolean photo)
             throws IOException {
+        result(chat, replyTo, output, caption, photo, null);
+    }
+
+    /** Прикрепляет клавиатуру одновременно с отправкой готового файла. */
+    public void result(long chat, long replyTo, Path output, String caption, boolean photo,
+            Object keyboard) throws IOException {
         checkOutputSize(output);
         var body = new LinkedMultiValueMap<String, Object>();
         body.add("chat_id", Long.toString(chat));
         body.add("caption", caption);
         body.add("parse_mode", "HTML");
+        if (keyboard != null) {
+            body.add("reply_markup", mapper.writeValueAsString(keyboard));
+        }
         body.add(
                 "reply_parameters",
                 mapper.writeValueAsString(

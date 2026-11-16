@@ -17,12 +17,15 @@ import java.util.Set;
 @Service
 @ConditionalOnProperty(name = "telegram.enabled", havingValue = "true")
 public class MediaBatchService {
+    private static final org.slf4j.Logger LOG =
+            org.slf4j.LoggerFactory.getLogger(MediaBatchService.class);
     private final TelegramClient client;
     private final VideoService service;
     private final VideoProcessor videos;
     private final PhotoProcessor photos;
     private final HashService hashes;
     private final BotUserStore users;
+    private final FeedbackStore feedback;
 
     public MediaBatchService(
             TelegramClient client,
@@ -30,13 +33,14 @@ public class MediaBatchService {
             VideoProcessor videos,
             PhotoProcessor photos,
             HashService hashes,
-            BotUserStore users) {
+            BotUserStore users, FeedbackStore feedback) {
         this.client = client;
         this.service = service;
         this.videos = videos;
         this.photos = photos;
         this.hashes = hashes;
         this.users = users;
+        this.feedback = feedback;
     }
 
     /** Скачивает исходник, последовательно создаёт и отправляет копии, сообщая прогресс. */
@@ -134,8 +138,17 @@ public class MediaBatchService {
                                                         : "Чёрные поля — результат масштаба. ")
                                                 + "Разные хеши не"
                                                 + " гарантируют уникальность для соцсетей.";
-                                sendWithRetry(chat, reply, output, caption, photo);
+                                String feedbackId = feedback.prepare(chat, reply, i + 1, photo,
+                                        profile.mode(), photo ? "photo-v1"
+                                                : variantKey == null ? "video-v1" : "video-v2");
+                                sendWithRetry(chat, reply, output, caption, photo,
+                                        TelegramFeedback.resultButton(feedbackId));
                                 BotJournal.delivered(i + 1);
+                                try {
+                                    feedback.delivered(feedbackId, chat);
+                                } catch (java.io.IOException ex) {
+                                    LOG.warn("Could not confirm feedback delivery; a callback can recover it");
+                                }
                                 progress.state(i, "Завершено ✅");
                                 users.delivered(chat, i == 0);
                                 Files.deleteIfExists(output);
@@ -182,13 +195,13 @@ public class MediaBatchService {
     }
 
     private void sendWithRetry(
-            long chat, long reply, java.nio.file.Path output, String caption, boolean photo)
+            long chat, long reply, java.nio.file.Path output, String caption, boolean photo, Object keyboard)
             throws java.io.IOException {
         client.checkOutputSize(output);
         for (int attempt = 0; ; attempt++) {
             BotJournal.sending(true);
             try {
-                client.result(chat, reply, output, caption, photo);
+                client.result(chat, reply, output, caption, photo, keyboard);
                 return;
             } catch (TelegramApiException ex) {
                 if (ex.permanent()) {

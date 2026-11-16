@@ -24,18 +24,24 @@ public class TelegramHandler {
     private final BotUserStore users;
     private final BotJobs jobs;
     private final MediaBatchService batches;
+    private final TelegramFeedback feedback;
+    private final TelegramMaterials materials;
 
     public TelegramHandler(
             TelegramClient client,
             TelegramProperties config,
             BotUserStore users,
             BotJobs jobs,
-            MediaBatchService batches) {
+            MediaBatchService batches,
+            TelegramFeedback feedback,
+            TelegramMaterials materials) {
         this.client = client;
         this.config = config;
         this.users = users;
         this.jobs = jobs;
         this.batches = batches;
+        this.feedback = feedback;
+        this.materials = materials;
     }
 
     /** Обрабатывает разрешённое обновление из личного чата или callback-запрос. */
@@ -62,6 +68,17 @@ public class TelegramHandler {
                     callback
                             ? query.path("data").asText()
                             : message.path("text").asText("").split("\\s+")[0].split("@")[0];
+            if (!callback && "/feedback_stats".equals(action)) {
+                feedback.showStats(id);
+                return;
+            }
+            if (callback && action.startsWith("fb:")) {
+                feedback.handle(id, message, action);
+                return;
+            }
+            if (materials.handle(id, message, action, callback)) {
+                return;
+            }
             var profile = users.get(id);
             if (action.startsWith("mode:")) {
                 profile = users.settings(id, action.substring(5), profile.copies());

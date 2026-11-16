@@ -58,7 +58,7 @@ class TelegramTests {
         var batches = mock(MediaBatchService.class);
         var jobs = mock(BotJobs.class);
         var config = config(Set.of());
-        var handler = new TelegramHandler(client, config, new BotUserStore(config), jobs, batches);
+        var handler = TelegramTestSupport.handler(client, config, new BotUserStore(config), jobs, batches);
         doAnswer(
                         call -> {
                             ((Runnable) call.getArgument(1)).run();
@@ -88,7 +88,7 @@ class TelegramTests {
         var service = mock(MediaBatchService.class);
         var config = config(Set.of(99L));
         var handler =
-                new TelegramHandler(
+                TelegramTestSupport.handler(
                         client, config, new BotUserStore(config), mock(BotJobs.class), service);
         handler.handle(
                 json.readTree(
@@ -104,7 +104,7 @@ class TelegramTests {
         var client = mock(TelegramClient.class);
         var service = mock(MediaBatchService.class);
         var config = config(Set.of());
-        new TelegramHandler(client, config, new BotUserStore(config), mock(BotJobs.class), service)
+        TelegramTestSupport.handler(client, config, new BotUserStore(config), mock(BotJobs.class), service)
                 .handle(
                         json.readTree(
                                 """

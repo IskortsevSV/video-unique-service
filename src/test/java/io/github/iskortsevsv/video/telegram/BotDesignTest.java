@@ -86,7 +86,7 @@ class BotDesignTest {
         var jobs = mock(BotJobs.class);
         var batches = mock(MediaBatchService.class);
         var users = new BotUserStore(config());
-        var handler = new TelegramHandler(client, config(), users, jobs, batches);
+        var handler = TelegramTestSupport.handler(client, config(), users, jobs, batches);
         var mapper = new JsonMapper();
         for (String action : List.of("mode:hard", "copies:5", "pay:pro")) {
             handler.handle(
@@ -163,16 +163,17 @@ class BotDesignTest {
                             assertTrue(Files.exists(output));
                             results.add(hashes.sha256(output));
                             assertNotNull(ImageIO.read(output.toFile()));
+                            assertTrue(call.getArgument(5).toString().contains("fb:"));
                             return null;
                         })
                 .when(client)
-                .result(anyLong(), anyLong(), any(), anyString(), eq(true));
+                .result(anyLong(), anyLong(), any(), anyString(), eq(true), any());
         var videos = mock(VideoProcessor.class);
         var service =
                 new VideoService(
                         videos, hashes, new VideoProperties("f", "p", Duration.ofSeconds(10), 1));
         var batches =
-                new MediaBatchService(client, service, videos, new PhotoProcessor(), hashes, users);
+                new MediaBatchService(client, service, videos, new PhotoProcessor(), hashes, users, new FeedbackStore(config()));
         batches.run(42, 1, 2, "photo", true, users.get(42), new ProcessingOptions(1.01, .98));
         assertEquals(3, results.size());
         assertEquals(1, users.get(42).originals());
@@ -216,14 +217,14 @@ class BotDesignTest {
                             return null;
                         })
                 .when(videos)
-                .process(any(), any(), any(), anyBoolean(), any(), any());
+                .process(any(), any(), any(), anyBoolean(), any(), any(), any());
         doThrow(new TelegramApiException(5))
                 .when(client)
-                .result(anyLong(), anyLong(), any(), anyString(), anyBoolean());
+                .result(anyLong(), anyLong(), any(), anyString(), anyBoolean(), any());
         var service =
                 new VideoService(
                         videos, hashes, new VideoProperties("f", "p", Duration.ofSeconds(10), 1));
-        new MediaBatchService(client, service, videos, new PhotoProcessor(), hashes, users)
+        new MediaBatchService(client, service, videos, new PhotoProcessor(), hashes, users, new FeedbackStore(config()))
                 .run(42, 1, 2, "video", false, users.get(42), new ProcessingOptions(1.01, .98));
         assertEquals(0, users.get(42).originals());
         assertEquals(0, users.get(42).results());

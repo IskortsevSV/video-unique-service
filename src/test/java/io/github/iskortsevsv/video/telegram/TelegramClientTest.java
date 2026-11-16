@@ -123,8 +123,10 @@ class TelegramClientTest {
         assertFalse(Files.exists(source));
 
         response("/bot123:fake/sendVideo", 200, "{\"ok\":true,\"result\":{}}");
-        local.result(42, 8, output, "caption", false);
+        local.result(42, 8, output, "caption", false, TelegramFeedback.resultButton("copy"));
         assertTrue(request.get().contains(output.toUri().toASCIIString()));
+        assertTrue(request.get().contains("reply_markup"));
+        assertTrue(request.get().contains("fb:copy"));
     }
 
     @Test
@@ -223,7 +225,7 @@ class TelegramClientTest {
         var config = new TelegramProperties(true, "123:fake", directory.resolve("offset"), Set.of());
         var jobs = new BotJobs();
         try {
-            var handler = new TelegramHandler(client, config, new BotUserStore(config), jobs, null);
+            var handler = TelegramTestSupport.handler(client, config, new BotUserStore(config), jobs, null);
             var update = new tools.jackson.databind.json.JsonMapper().readTree("""
                     {"callback_query":{"id":"expired","from":{"id":42},"data":"copies:5",
                     "message":{"message_id":10,"chat":{"id":42,"type":"private"}}}}

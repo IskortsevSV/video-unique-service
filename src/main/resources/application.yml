@@ -16,3 +16,5 @@ telegram:
   token: ${TELEGRAM_TOKEN:}
   offset-file: ${TELEGRAM_OFFSET_FILE:.local/telegram-offset.txt}
   allowed-chat-ids: ${TELEGRAM_ALLOWED_CHAT_IDS:}
+  feedback-admin-ids: ${TELEGRAM_FEEDBACK_ADMIN_IDS:}
+  feedback-uploads-enabled: ${TELEGRAM_FEEDBACK_UPLOADS_ENABLED:false}

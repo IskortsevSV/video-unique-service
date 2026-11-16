@@ -4,12 +4,8 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
-import java.nio.channels.FileChannel;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -194,34 +190,11 @@ final class BotJournal {
     }
 
     private static Properties read(Path path) throws IOException {
-        Properties p = new Properties();
-        if (Files.exists(path)) {
-            try (var in = Files.newInputStream(path)) {
-                p.load(in);
-            }
-        }
-        return p;
+        return TelegramStateFiles.read(path);
     }
 
     private static void write(Path path, Properties p) throws IOException {
-        Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
-        try (var channel =
-                FileChannel.open(
-                        tmp,
-                        StandardOpenOption.CREATE,
-                        StandardOpenOption.TRUNCATE_EXISTING,
-                        StandardOpenOption.WRITE)) {
-            var out = java.nio.channels.Channels.newOutputStream(channel);
-            p.store(out, "VUniq pending update");
-            out.flush();
-            channel.force(true);
-        }
-        try {
-            Files.move(
-                    tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException ex) {
-            Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
-        }
+        TelegramStateFiles.write(path, p);
     }
 
     static Item current() {

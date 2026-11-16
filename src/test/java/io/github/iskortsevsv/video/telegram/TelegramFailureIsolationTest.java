@@ -70,7 +70,7 @@ class TelegramFailureIsolationTest {
         when(client.screen(eq(1L), anyString(), any())).thenThrow(new TelegramApiException(1, 403));
         doAnswer(call -> { healthy.countDown(); return null; })
                 .when(client).message(eq(2L), anyString());
-        var handler = new TelegramHandler(client, config, new BotUserStore(config), jobs, null);
+        var handler = TelegramTestSupport.handler(client, config, new BotUserStore(config), jobs, null);
         var poller = new TelegramPoller(client, handler, config, jobs);
         try {
             poller.start();
@@ -110,7 +110,7 @@ class TelegramFailureIsolationTest {
         });
         doAnswer(call -> { healthy.countDown(); return null; })
                 .when(client).message(eq(2L), anyString());
-        var handler = new TelegramHandler(client, config, new BotUserStore(config), jobs, null);
+        var handler = TelegramTestSupport.handler(client, config, new BotUserStore(config), jobs, null);
         var poller = new TelegramPoller(client, handler, config, jobs);
         try {
             poller.start();
@@ -194,7 +194,7 @@ class TelegramFailureIsolationTest {
             attempts.countDown();
             throw new TelegramApiException(1, code);
         });
-        var handler = new TelegramHandler(client, config, new BotUserStore(config), jobs, null);
+        var handler = TelegramTestSupport.handler(client, config, new BotUserStore(config), jobs, null);
         var poller = new TelegramPoller(client, handler, config, jobs);
         try {
             poller.start();
@@ -215,7 +215,7 @@ class TelegramFailureIsolationTest {
         var hashes = new HashService();
         var users = new BotUserStore(config());
         var service = new VideoService(videos, hashes, new VideoProperties("ffmpeg", "ffprobe", Duration.ofSeconds(2), 1));
-        var batches = new MediaBatchService(client, service, videos, photos, hashes, users);
+        var batches = new MediaBatchService(client, service, videos, photos, hashes, users, new FeedbackStore(config()));
         var profile = users.settings(1, "basic", 1);
         var options = new ProcessingOptions(1.01, .98);
         var item = new BotJournal(config().offsetFile()).stage(message(100, 1, "/start"));
@@ -231,7 +231,7 @@ class TelegramFailureIsolationTest {
             return null;
         }).when(photos).process(any(), any(), eq(.98), eq(false), eq(1));
         doAnswer(call -> { throw new TelegramApiException(1, 403); })
-                .when(client).result(eq(1L), eq(10L), any(), anyString(), eq(true));
+                .when(client).result(eq(1L), eq(10L), any(), anyString(), eq(true), any());
         BotJournal.set(item);
         try {
             assertEquals(403, assertThrows(TelegramApiException.class,
@@ -241,7 +241,7 @@ class TelegramFailureIsolationTest {
             assertFalse(Files.exists(output.get()));
             assertFalse(Files.exists(output.get().getParent()));
             assertEquals(0, users.get(1).results());
-            verify(client, times(1)).result(eq(1L), eq(10L), any(), anyString(), eq(true));
+            verify(client, times(1)).result(eq(1L), eq(10L), any(), anyString(), eq(true), any());
             verify(client, never()).message(anyLong(), anyString());
             verify(client, never()).screen(anyLong(), anyString(), any());
             verify(client).edit(eq(1L), eq(11L), contains("Не завершено"), any());

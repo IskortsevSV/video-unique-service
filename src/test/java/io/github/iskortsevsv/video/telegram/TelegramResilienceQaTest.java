@@ -378,11 +378,11 @@ class TelegramResilienceQaTest {
             var service = new VideoService(video, hashes, props);
             var batch =
                     new MediaBatchService(
-                            client, service, video, new PhotoProcessor(), hashes, users);
+                            client, service, video, new PhotoProcessor(), hashes, users, new FeedbackStore(config));
             poller =
                     new TelegramPoller(
                             client,
-                            new TelegramHandler(client, config, users, jobs, batch),
+                            TelegramTestSupport.handler(client, config, users, jobs, batch),
                             config, jobs);
         }
 
