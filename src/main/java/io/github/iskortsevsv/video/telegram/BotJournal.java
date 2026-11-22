@@ -172,9 +172,13 @@ final class BotJournal {
             throw new IllegalArgumentException("Invalid delivery state");
         }
         boolean snapshot = data.containsKey("mode") || data.containsKey("copies")
-                || data.containsKey("speed") || data.containsKey("scale") || data.containsKey("variant-key");
+                || data.containsKey("speed") || data.containsKey("scale") || data.containsKey("variant-key")
+                || data.containsKey("mirrorVideo");
         if (snapshot) {
             int copies = Integer.parseInt(data.getProperty("copies"));
+            if (!Set.of("true", "false").contains(data.getProperty("mirrorVideo", "false"))) {
+                throw new IllegalArgumentException("Invalid mirrorVideo setting");
+            }
             if (!Set.of("basic", "hard").contains(data.getProperty("mode")) || copies < 1 || copies > 10 || sent > copies) {
                 throw new IllegalArgumentException("Invalid job settings");
             }
@@ -276,6 +280,7 @@ final class BotJournal {
                 data.setProperty("copies", Integer.toString(requested.copies()));
                 data.setProperty("speed", Double.toString(requested.speed()));
                 data.setProperty("scale", Double.toString(requested.scale()));
+                data.setProperty("mirrorVideo", Boolean.toString(requested.mirrorVideo()));
                 data.setProperty("variant-key", UUID.randomUUID().toString());
                 persist();
             }
@@ -283,7 +288,8 @@ final class BotJournal {
                     data.getProperty("mode"),
                     Integer.parseInt(data.getProperty("copies")),
                     Double.parseDouble(data.getProperty("speed")),
-                    Double.parseDouble(data.getProperty("scale")));
+                    Double.parseDouble(data.getProperty("scale")),
+                    Boolean.parseBoolean(data.getProperty("mirrorVideo", "false")));
         }
 
         synchronized int sent() {
@@ -323,7 +329,11 @@ final class BotJournal {
     }
 
     /** Фиксирует параметры обработки, выбранные при приёме задания. */
-    record Snapshot(String mode, int copies, double speed, double scale) {
+    record Snapshot(String mode, int copies, double speed, double scale, boolean mirrorVideo) {
+        Snapshot(String mode, int copies, double speed, double scale) {
+            this(mode, copies, speed, scale, false);
+        }
+
         boolean hard() {
             return mode.equals("hard");
         }

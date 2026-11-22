@@ -82,14 +82,19 @@ public class TelegramHandler {
             var profile = users.get(id);
             var access = config.highChatIds().contains(id) ? CopyAccess.HIGH : CopyAccess.BASIC;
             if (action.startsWith("mode:")) {
-                profile = users.settings(id, action.substring(5), profile.videoCopies(), profile.photoCopies());
+                profile = users.settings(id, action.substring(5), profile.videoCopies(), profile.photoCopies(),
+                        profile.mirrorVideo());
+                action = "settings";
+            } else if (callback && ("mirror:on".equals(action) || "mirror:off".equals(action))) {
+                profile = users.settings(id, profile.mode(), profile.videoCopies(), profile.photoCopies(),
+                        "mirror:on".equals(action));
                 action = "settings";
             } else if (action.startsWith("video:") || action.startsWith("photo:")) {
                 boolean photoSetting = action.startsWith("photo:");
                 int count = Integer.parseInt(action.substring(6));
                 access.validate(photoSetting, count);
                 profile = users.settings(id, profile.mode(), photoSetting ? profile.videoCopies() : count,
-                        photoSetting ? count : profile.photoCopies());
+                        photoSetting ? count : profile.photoCopies(), profile.mirrorVideo());
                 action = "settings";
             } else if (action.startsWith("copies:")) {
                 // Old keyboards selected one count for both media. Show the new choices.
@@ -176,7 +181,7 @@ public class TelegramHandler {
                             : options(caption);
             int copies = access.selected(profile, photo);
             var snapshot = BotJournal.snapshot(new BotJournal.Snapshot(
-                    profile.mode(), copies, options.speed(), options.scale()));
+                    profile.mode(), copies, options.speed(), options.scale(), !photo && profile.mirrorVideo()));
             long progress =
                     client.screen(
                             id,

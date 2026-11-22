@@ -75,19 +75,20 @@ class LocalBotApi(ThreadingHTTPServer):
         if method == "getFile":
             file = self.media[body["file_id"]]
             return {"file_path": str(file), "file_size": file.stat().st_size}
-        if method in ("sendMessage", "sendDocument"):
-            if method == "sendDocument":
+        if method in ("sendMessage", "sendDocument", "sendVideo"):
+            if method in ("sendDocument", "sendVideo"):
                 # In local Bot API mode the JAR supplies a file URI. Read it before acknowledging delivery.
-                uri = urlsplit(body["document"])
+                field = "video" if method == "sendVideo" else "document"
+                uri = urlsplit(body[field])
                 if uri.scheme != "file" or uri.netloc:
-                    raise ValueError("Expected a local file URI for sendDocument")
+                    raise ValueError(f"Expected a local file URI for {method}")
                 path = Path(url2pathname(uri.path)).resolve(strict=True)
                 path.relative_to(self.output_root)
-                body["document"] = path.read_bytes()
+                body[field] = path.read_bytes()
             result = {"message_id": next(self.message_ids)}
             self.events.put((method, {**body, **result}))
             return result
-        if method == "editMessageReplyMarkup":
+        if method in ("editMessageReplyMarkup", "editMessageText"):
             self.events.put((method, body))
         return True
 

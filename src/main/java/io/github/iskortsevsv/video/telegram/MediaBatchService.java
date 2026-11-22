@@ -51,7 +51,7 @@ public class MediaBatchService {
             String fileId,
             boolean photo,
             BotJournal.Snapshot profile) {
-        var base = new ProcessingOptions(profile.speed(), profile.scale());
+        var base = new ProcessingOptions(profile.speed(), profile.scale(), profile.mirrorVideo());
         if (BotJournal.uncertain()) {
             client.message(
                     chat,
@@ -231,6 +231,6 @@ public class MediaBatchService {
         double speed = base.speed() + step <= 2 ? base.speed() + step : base.speed() - step;
         double scale = base.scale() - step >= .5 ? base.scale() - step : base.scale() + step;
         return new ProcessingOptions(
-                Math.round(speed * 10000) / 10000.0, Math.round(scale * 10000) / 10000.0);
+                Math.round(speed * 10000) / 10000.0, Math.round(scale * 10000) / 10000.0, base.mirrorVideo());
     }
 }

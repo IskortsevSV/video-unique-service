@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import tools.jackson.databind.json.JsonMapper;
 
@@ -23,22 +25,23 @@ class BotJournalTest {
         new BotJournal(offset).stage(update).snapshot(profile);
         Path record = directory.resolve("offset.jobs/100.properties");
         Files.write(record, Files.readAllLines(record).stream()
-                .filter(line -> !line.startsWith("variant-key="))
+                .filter(line -> !line.startsWith("variant-key=") && !line.startsWith("mirrorVideo="))
                 .toList());
 
         var restored = new BotJournal(offset).stage(update);
         assertEquals(new BotJournal.Snapshot("hard", 3, 1.04, .94),
-                restored.snapshot(profile));
+                restored.snapshot(new BotJournal.Snapshot("hard", 3, 1.04, .94, true)));
         assertNull(restored.variantKey());
     }
 
-    @Test
-    void recoversSettingsAndDeliveryStateUntilOffsetHasAdvanced() throws Exception {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void recoversSettingsAndDeliveryStateUntilOffsetHasAdvanced(boolean nextDeliveryUncertain) throws Exception {
         var update =
                 new JsonMapper().readTree("{\"update_id\":100,\"message\":{\"text\":\"test\"}}");
         var journal = new BotJournal(directory.resolve("offset"));
         var item = journal.stage(update);
-        var old = new BotJournal.Snapshot("hard", 5, 1.04, .94);
+        var old = new BotJournal.Snapshot("hard", 5, 1.04, .94, true);
         item.snapshot(old);
         String originalKey = item.variantKey();
         assertNotNull(originalKey);
@@ -47,17 +50,19 @@ class BotJournalTest {
         assertNotEquals(originalKey, next.variantKey());
         next.complete();
         item.delivered(1);
-        item.sending(true);
+        if (nextDeliveryUncertain) {
+            item.sending(true);
+        }
 
         var recovered = new BotJournal(directory.resolve("offset"));
         assertEquals(1, recovered.pending().size());
         var replay = recovered.stage(recovered.pending().getFirst());
         var changed = new BotJournal.Snapshot("basic", 1, 1.01, .98);
         assertEquals(
-                new BotJournal.Snapshot("hard", 5, 1.04, .94),
+                old,
                 replay.snapshot(changed));
         assertEquals(1, replay.sent());
-        assertTrue(replay.uncertain());
+        assertEquals(nextDeliveryUncertain, replay.uncertain());
         assertEquals(originalKey, replay.variantKey());
         replay.complete();
         assertTrue(recovered.pending().isEmpty());

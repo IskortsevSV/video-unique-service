@@ -60,9 +60,11 @@ class CopyLimitsTest {
         verify(client).message(eq(42L), contains("от 1 до " + limit));
         click(handler, "copies:9");
         assertEquals(selected, users.get(42));
+        click(handler, "mirror:on");
+        click(handler, "mirror:on");
         handler.handle(upload);
         verify(batches).run(eq(42L), eq(7L), anyLong(), eq("file"), eq(photo),
-                eq(new BotJournal.Snapshot("hard", limit, 1.04, .94)));
+                eq(new BotJournal.Snapshot("hard", limit, 1.04, .94, !photo)));
     }
 
     private void click(TelegramHandler handler, String action) {
