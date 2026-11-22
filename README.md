@@ -173,6 +173,28 @@ Windows-скрипт запуска включает `-Djava.net.useSystemProxie
 
 ## VPS: запуск через systemd
 
+### Первая установка на Ubuntu Server 24.04
+
+1. Подготовьте чистую VM с systemd, административным SSH и включённым репозиторием Ubuntu `universe`. Возьмите JAR из доверенной сборки и исполняемый `telegram-bot-api`, собранный для архитектуры этой VM из [официальных исходников](https://github.com/tdlib/telegram-bot-api). Зафиксируйте SHA-256 обоих файлов на машине сборки до передачи. Поместите артефакты и checkout нужного коммита в каталог, доступный для записи только администратору.
+2. Подготовьте закрытые файлы `telegram.properties` и `telegram-bot-api.env` с правами `0600`. Для проверки REST достаточно `telegram.enabled=false`. Для нового бота укажите `telegram.enabled=true`, `telegram.token` и `telegram.local-api-files=/var/lib/video-unique-service/telegram-api/media`. В env-файле нужны отдельные строки `TELEGRAM_API_ID=…`, `TELEGRAM_API_HASH=…` и `TELEGRAM_BOT_ID=…`. Для переноса действующего бота сначала выполните процедуру переключения Bot API, описанную выше.
+3. Запустите из доверенного checkout команду ниже, подставив пути и сохранённые контрольные суммы. Она устанавливает OpenJDK 25 из подписанного репозитория Ubuntu, FFmpeg, первый JAR, бинарник Bot API и обе службы. После запуска проверяет ответы на loopback-портах 8080 и 8081. При повторе сохраняются установленный релиз, файлы конфигурации и состояние пользователей.
+
+```bash
+sudo bash deploy/systemd/install-vps.sh /root/release/app.jar "$APP_SHA256" \
+  /root/release/telegram-bot-api "$BOT_API_SHA256" \
+  /root/release/telegram.properties /root/release/telegram-bot-api.env
+```
+
+4. На доверенной машине создайте отдельную пару ключей командой `ssh-keygen -t ed25519 -f vuniq-actions` (для неинтерактивного CI оставьте парольную фразу пустой). На VM передайте только `vuniq-actions.pub`. Из того же checkout выполните команду ниже. Скрипт установит штатный обработчик деплоя, проверит правило sudo через `visudo` и добавит ограниченный ключ. Повторный запуск с тем же ключом сохраняет одну запись. Другой публичный ключ можно добавить этой же командой.
+
+```bash
+sudo bash deploy/systemd/setup-deploy-ssh.sh /root/release/vuniq-actions.pub
+```
+
+5. При подключении нового сервера к CI задайте в GitHub Environment назначения `VPS_HOST`, `VPS_SSH_KEY` (приватная часть пары) и `VPS_KNOWN_HOSTS`. Для последнего получите через доверенную консоль сервера тип и открытый ключ из `/etc/ssh/ssh_host_ed25519_key.pub`; сохраните строку вида `имя-из-VPS_HOST ssh-ed25519 BASE64`. Штатный workflow использует SSH-порт 22.
+
+При изменениях в скриптах PR запускает **Verify VPS installation** в отдельной одноразовой Ubuntu VM. Он собирает настоящий Bot API и два различимых JAR, выполняет повторную установку, отправляет синтетическое видео через REST и проверяет по SSH отказ по SHA, установку релиза, автоматический и ручной откат. Для стенда используются временные ключи и выключенный Telegram polling.
+
 Конфигурация `deploy/systemd/video-unique-service.service` проверена на Ubuntu 22.04 с systemd 249, Java 25 и FFmpeg. Она рассчитана на VPS с 4 ГБ RAM: Java heap ограничен 768 МБ, вся служба вместе с FFmpeg — 3 ГБ. На сервере другой мощности лимиты нужно пересмотреть.
 
 Пути и права:
