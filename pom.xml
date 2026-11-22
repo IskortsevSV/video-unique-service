@@ -59,4 +59,45 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>packaged-media-tests</id>
+            <activation>
+                <property>
+                    <name>env.RUN_FFMPEG_TESTS</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <properties>
+                <test.python>python</test.python>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>test-packaged-service</id>
+                                <phase>integration-test</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <skip>${skipTests}</skip>
+                                    <executable>${test.python}</executable>
+                                    <arguments>
+                                        <argument>-B</argument>
+                                        <argument>${project.basedir}/src/test/e2e/test_packaged_service.py</argument>
+                                        <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                                        <argument>${java.home}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
