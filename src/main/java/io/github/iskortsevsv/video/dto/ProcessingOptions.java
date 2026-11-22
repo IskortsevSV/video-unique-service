@@ -4,8 +4,12 @@ import org.springframework.http.HttpStatus;
 
 import io.github.iskortsevsv.video.exception.VideoException;
 
-/** Проверенные параметры изменения скорости и масштаба видео. */
-public record ProcessingOptions(double speed, double scale) {
+/** Проверенные параметры скорости, масштаба и горизонтального отражения видео. */
+public record ProcessingOptions(double speed, double scale, boolean mirrorVideo) {
+    public ProcessingOptions(double speed, double scale) {
+        this(speed, scale, false);
+    }
+
     public ProcessingOptions {
         if (!Double.isFinite(speed)
                 || speed < 0.5

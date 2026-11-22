@@ -186,7 +186,7 @@ public class VideoProcessor {
                                 "-map",
                                 "0:v:0",
                                 "-vf",
-                                filter,
+                                options.mirrorVideo() ? "hflip," + filter : filter,
                                 "-c:v",
                                 "libx264",
                                 "-preset",

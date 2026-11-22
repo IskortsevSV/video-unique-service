@@ -60,11 +60,12 @@ class BotDesignTest {
                 Clock.fixed(Instant.parse("2026-11-30T12:00:00Z"), ZoneId.of("Europe/Moscow"));
         var users = new BotUserStore(config(), november);
         assertEquals(3, users.get(42).photoCopies());
-        users.settings(42, "hard", 3, 10);
+        users.settings(42, "hard", 3, 10, true);
         users.delivered(42, true);
         users.delivered(42, false);
         var restored = new BotUserStore(config(), november).get(42);
         assertTrue(restored.hard());
+        assertTrue(restored.mirrorVideo());
         assertEquals(1, restored.originals());
         assertEquals(2, restored.results());
         var december =
@@ -77,7 +78,8 @@ class BotDesignTest {
         assertEquals(0, december.originals());
         assertEquals(10, december.photoCopies());
         assertTrue(december.hard());
-        assertThrows(IllegalArgumentException.class, () -> users.settings(42, "hard", 3, 11));
+        assertTrue(december.mirrorVideo());
+        assertThrows(IllegalArgumentException.class, () -> users.settings(42, "hard", 3, 11, true));
     }
 
     @Test

@@ -44,7 +44,7 @@ def stop_app(app):
             app.wait(timeout=10)
 
 
-class PackagedServiceTest(unittest.TestCase):
+class PackagedServiceCase(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         directory = tempfile.TemporaryDirectory(prefix="vuniq-e2e-")
@@ -70,6 +70,7 @@ class PackagedServiceTest(unittest.TestCase):
                 f"--telegram.offset-file={cls.state / 'offset'}", f"--telegram.local-api-files={media}",
                 f"--telegram.local-api-port={cls.bot.server_port}", "--telegram.feedback-admin-ids=42,44",
                 "--telegram.reference-enabled=true", "--telegram.feedback-uploads-enabled=false",
+                "--telegram.high-chat-ids=50",
             ], cwd=cls.state, stdout=output, stderr=subprocess.STDOUT)
         cls.addClassCleanup(stop_app, app)
         # Tomcat reports the port after binding it. No reserve/release race between test runs.
@@ -82,6 +83,8 @@ class PackagedServiceTest(unittest.TestCase):
             time.sleep(0.1)
         raise RuntimeError("Test JAR failed to start:\n" + log.read_text(encoding="utf-8", errors="replace")[-2000:])
 
+
+class PackagedServiceTest(PackagedServiceCase):
     def upload(self, data):
         boundary = uuid4().hex
         body = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="sample.mov"\r\n'
@@ -170,6 +173,54 @@ class PackagedServiceTest(unittest.TestCase):
         self.assertIn("Проверено 0", report["text"])
         bot.message(43, text="/feedback_stats")
         bot.wait_for("sendMessage", 43, "Команда доступна администратору")
+
+
+class MirrorVideoTest(PackagedServiceCase):
+    def test_horizontal_mirror_on_every_video_copy(self):
+        chat = 50
+        bot = self.bot
+        source = bot.media["source.mp4"]
+        bot.message(chat, text="/settings")
+        menu = bot.wait_for("sendMessage", chat, "Настройки обработки")
+
+        def select(label):
+            bot.click(menu, label)
+            return bot.wait_for("editMessageText", chat, "Настройки обработки")
+
+        was_mirrored = False
+        for mode, mirror, audio in [("Basic", False, True), ("Basic", True, False),
+                                    ("Hard", True, True), ("Hard", False, False)]:
+            with self.subTest(mode=mode, mirror=mirror, audio=audio):
+                menu = select(mode)
+                rows = menu["reply_markup"]["inline_keyboard"]
+                toggle = next(b for row in rows for b in row if "Отразить по горизонтали" in b["text"])
+                self.assertEqual("mirror:off" if was_mirrored else "mirror:on", toggle["callback_data"])
+                if was_mirrored != mirror:
+                    menu = select("Отразить по горизонтали")
+                    was_mirrored = mirror
+                command = [FFMPEG, "-nostdin", "-y", "-v", "error", "-f", "lavfi", "-i",
+                           "color=black:s=128x96:r=25:d=2,drawbox=x=16:y=0:w=40:h=96:c=white:t=fill"]
+                if audio:
+                    command += ["-f", "lavfi", "-i", "sine=duration=2", "-c:a", "aac"]
+                subprocess.run(command + ["-c:v", "libx264", source], check=True, timeout=20)
+                bot.message(chat, caption="speed=1.25 scale=0.75", document={
+                    "file_id": source.name, "file_name": source.name, "file_size": source.stat().st_size})
+                for index in range(1, 4):
+                    copy = bot.wait_for("sendVideo", chat)
+                    self.assertIn(f"копия {index}/3", copy["caption"])
+                    output = self.state / "check.mp4"
+                    output.write_bytes(copy["video"])
+                    info = probe(output)
+                    self.assertEqual(audio, any(s["codec_name"] == "aac" for s in info["streams"]))
+                    self.assertAlmostEqual(1.6, float(info["format"]["duration"]), delta=0.14)
+                    # Average luminance of each half and of the top edge after scaling/padding.
+                    frame = subprocess.check_output([FFMPEG, "-v", "error", "-i", output,
+                        "-frames:v", "1", "-vf", "scale=2:16:flags=area", "-pix_fmt", "gray",
+                        "-f", "rawvideo", "-"], timeout=15)
+                    left, right = frame[16:18]
+                    self.assertGreater(right - left if mirror else left - right, 50)
+                    self.assertLess(max(frame[:2]), 25)
+                bot.wait_for("sendMessage", chat, "Все копии отправлены")
 
 
 if __name__ == "__main__":

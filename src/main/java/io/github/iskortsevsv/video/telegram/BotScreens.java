@@ -36,6 +36,8 @@ public final class BotScreens {
                         button((p.hard() ? "" : "✓ ") + "✨ Basic", "mode:basic"),
                         button((p.hard() ? "✓ " : "") + "🔥 Hard", "mode:hard")));
         addCopyButtons(rows, "Видео", "video:", access.selected(p, false), access.videos);
+        rows.add(List.of(button("Отразить по горизонтали · " + (p.mirrorVideo() ? "вкл ✓" : "выкл"),
+                p.mirrorVideo() ? "mirror:off" : "mirror:on")));
         addCopyButtons(rows, "Фото", "photo:", access.selected(p, true), access.photos);
         rows.add(List.of(button("← Главное меню", "home")));
         return Map.of("inline_keyboard", rows);
@@ -70,7 +72,7 @@ public final class BotScreens {
                 + "</b>\nДоступ: <b>" + access.label + "</b>\n"
                 + "Видео: " + access.selected(p, false) + " из " + access.videos
                 + " · Фото: " + access.selected(p, true) + " из " + access.photos + "\n\n"
-                + "Выбери режим и количество кнопками ниже. Настройки сохранятся.\n"
+                + "Отражение меняет местами левую и правую стороны во всех копиях видео.\n"
                 + "Hard для видео приближает центр кадра и заметнее меняет цвет.\n\n"
                 + "Все функции сейчас бесплатны.";
     }
