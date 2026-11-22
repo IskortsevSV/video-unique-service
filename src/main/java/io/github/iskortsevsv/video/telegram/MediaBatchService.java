@@ -50,8 +50,8 @@ public class MediaBatchService {
             long progressMessage,
             String fileId,
             boolean photo,
-            BotUserStore.Profile profile,
-            ProcessingOptions base) {
+            BotJournal.Snapshot profile) {
+        var base = new ProcessingOptions(profile.speed(), profile.scale());
         if (BotJournal.uncertain()) {
             client.message(
                     chat,

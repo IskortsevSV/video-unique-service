@@ -78,8 +78,7 @@ class TelegramTests {
                         anyLong(),
                         eq("abc"),
                         eq(false),
-                        argThat(p -> p.copies() == 3),
-                        eq(new ProcessingOptions(1.2, .98)));
+                        eq(new BotJournal.Snapshot("basic", 1, 1.2, .98)));
     }
 
     @Test

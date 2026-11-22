@@ -59,8 +59,8 @@ class BotDesignTest {
         var november =
                 Clock.fixed(Instant.parse("2026-11-30T12:00:00Z"), ZoneId.of("Europe/Moscow"));
         var users = new BotUserStore(config(), november);
-        assertEquals(3, users.get(42).copies());
-        users.settings(42, "hard", 10);
+        assertEquals(3, users.get(42).photoCopies());
+        users.settings(42, "hard", 3, 10);
         users.delivered(42, true);
         users.delivered(42, false);
         var restored = new BotUserStore(config(), november).get(42);
@@ -75,9 +75,9 @@ class BotDesignTest {
                                         ZoneId.of("Europe/Moscow")))
                         .get(42);
         assertEquals(0, december.originals());
-        assertEquals(10, december.copies());
+        assertEquals(10, december.photoCopies());
         assertTrue(december.hard());
-        assertThrows(IllegalArgumentException.class, () -> users.settings(42, "hard", 11));
+        assertThrows(IllegalArgumentException.class, () -> users.settings(42, "hard", 3, 11));
     }
 
     @Test
@@ -88,7 +88,7 @@ class BotDesignTest {
         var users = new BotUserStore(config());
         var handler = TelegramTestSupport.handler(client, config(), users, jobs, batches);
         var mapper = new JsonMapper();
-        for (String action : List.of("mode:hard", "copies:5", "pay:pro")) {
+        for (String action : List.of("mode:hard", "photo:2", "pay:pro")) {
             handler.handle(
                     mapper.readTree(
                             "{\"callback_query\":{\"id\":\"cb\",\"from\":{\"id\":42},\"data\":\""
@@ -96,13 +96,13 @@ class BotDesignTest {
                                     + "\",\"message\":{\"message_id\":8,\"chat\":{\"id\":42,\"type\":\"private\"}}}}"));
         }
         assertTrue(users.get(42).hard());
-        assertEquals(5, users.get(42).copies());
+        assertEquals(2, users.get(42).photoCopies());
         verify(client, times(3)).answer("cb");
         verify(client).screen(eq(42L), contains("Деньги не списываются"), any());
         verifyNoInteractions(jobs, batches);
         assertTrue(BotScreens.home("<test>").contains("&lt;test&gt;"));
         assertTrue(
-                BotScreens.subscription(users.get(42))
+                BotScreens.subscription(users.get(42), CopyAccess.BASIC)
                         .contains("Ограничения по исходникам отключены"));
     }
 
@@ -174,7 +174,7 @@ class BotDesignTest {
                         videos, hashes, new VideoProperties("f", "p", Duration.ofSeconds(10), 1));
         var batches =
                 new MediaBatchService(client, service, videos, new PhotoProcessor(), hashes, users, new FeedbackStore(config()));
-        batches.run(42, 1, 2, "photo", true, users.get(42), new ProcessingOptions(1.01, .98));
+        batches.run(42, 1, 2, "photo", true, new BotJournal.Snapshot("basic", 3, 1.01, .98));
         assertEquals(3, results.size());
         assertEquals(1, users.get(42).originals());
         assertEquals(3, users.get(42).results());
@@ -225,7 +225,7 @@ class BotDesignTest {
                 new VideoService(
                         videos, hashes, new VideoProperties("f", "p", Duration.ofSeconds(10), 1));
         new MediaBatchService(client, service, videos, new PhotoProcessor(), hashes, users, new FeedbackStore(config()))
-                .run(42, 1, 2, "video", false, users.get(42), new ProcessingOptions(1.01, .98));
+                .run(42, 1, 2, "video", false, new BotJournal.Snapshot("basic", 3, 1.01, .98));
         assertEquals(0, users.get(42).originals());
         assertEquals(0, users.get(42).results());
         assertFalse(Files.exists(inputs.getFirst().getParent()));

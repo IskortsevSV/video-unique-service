@@ -18,13 +18,18 @@ public record TelegramProperties(
         Path localApiFiles,
         @DefaultValue Set<Long> feedbackAdminIds,
         @DefaultValue("false") boolean feedbackUploadsEnabled,
-        @DefaultValue("false") boolean referenceEnabled) {
+        @DefaultValue("false") boolean referenceEnabled,
+        @DefaultValue Set<Long> highChatIds) {
     private static final long BYTES_PER_MB = 1_000_000L;
 
     @ConstructorBinding
     public TelegramProperties {
         allowedChatIds = allowedChatIds == null ? Set.of() : Set.copyOf(allowedChatIds);
         feedbackAdminIds = feedbackAdminIds == null ? Set.of() : Set.copyOf(feedbackAdminIds);
+        highChatIds = highChatIds == null ? Set.of() : Set.copyOf(highChatIds);
+        if (highChatIds.stream().anyMatch(id -> id <= 0)) {
+            throw new IllegalArgumentException("High access chat IDs must be positive");
+        }
         if (feedbackAdminIds.stream().anyMatch(id -> id <= 0)) {
             throw new IllegalArgumentException("Telegram administrator IDs must be positive");
         }
@@ -45,6 +50,13 @@ public record TelegramProperties(
     public TelegramProperties(boolean enabled, String token, Path offsetFile, Set<Long> allowedChatIds,
             int localApiPort, Path localApiFiles) {
         this(enabled, token, offsetFile, allowedChatIds, localApiPort, localApiFiles, Set.of(), false, false);
+    }
+
+    public TelegramProperties(boolean enabled, String token, Path offsetFile, Set<Long> allowedChatIds,
+            int localApiPort, Path localApiFiles, Set<Long> feedbackAdminIds,
+            boolean feedbackUploadsEnabled, boolean referenceEnabled) {
+        this(enabled, token, offsetFile, allowedChatIds, localApiPort, localApiFiles,
+                feedbackAdminIds, feedbackUploadsEnabled, referenceEnabled, Set.of());
     }
 
     /** Возвращает входной лимит в десятичных мегабайтах для выбранного Bot API. */

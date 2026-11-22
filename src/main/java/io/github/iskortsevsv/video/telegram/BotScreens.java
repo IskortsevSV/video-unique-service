@@ -29,21 +29,27 @@ public final class BotScreens {
         return Map.of("inline_keyboard", List.of(List.of(button("← Главное меню", "home"))));
     }
 
-    static Object settingsKeys(BotUserStore.Profile p) {
+    static Object settingsKeys(BotUserStore.Profile p, CopyAccess access) {
         var rows = new ArrayList<List<Map<String, String>>>();
         rows.add(
                 List.of(
                         button((p.hard() ? "" : "✓ ") + "✨ Basic", "mode:basic"),
                         button((p.hard() ? "✓ " : "") + "🔥 Hard", "mode:hard")));
-        for (int first : List.of(1, 6)) {
+        addCopyButtons(rows, "Видео", "video:", access.selected(p, false), access.videos);
+        addCopyButtons(rows, "Фото", "photo:", access.selected(p, true), access.photos);
+        rows.add(List.of(button("← Главное меню", "home")));
+        return Map.of("inline_keyboard", rows);
+    }
+
+    private static void addCopyButtons(List<List<Map<String, String>>> rows, String media,
+            String prefix, int selected, int maximum) {
+        for (int first = 1; first <= maximum; first += 5) {
             var row = new ArrayList<Map<String, String>>();
-            for (int i = first; i < first + 5; i++) {
-                row.add(button((p.copies() == i ? "✓ " : "") + i, "copies:" + i));
+            for (int i = first; i < first + 5 && i <= maximum; i++) {
+                row.add(button((selected == i ? "✓ " : "") + media + " " + i, prefix + i));
             }
             rows.add(row);
         }
-        rows.add(List.of(button("← Главное меню", "home")));
-        return Map.of("inline_keyboard", rows);
     }
 
     static String home(String name) {
@@ -53,23 +59,23 @@ public final class BotScreens {
                 + "Создавай варианты фото и видео в несколько нажатий.\n\n"
                 + "✨ <b>Basic</b> — мягкое изменение скорости и масштаба.\n"
                 + "🔥 <b>Hard</b> — более заметные изменения и коррекция цвета.\n\n"
-                + "🎁 <b>Тестовый доступ: бесплатно</b>\nОба режима и до 10 копий доступны без оплаты.\n\n"
+                + "🎁 <b>Тестовый доступ: бесплатно</b>\nВыбери число копий отдельно для фото и видео в /settings.\n\n"
                 + "Отправь фото или видео сюда 👇\n"
                 + "SHA-256 показывает различие байтов, а не гарантирует уникальность для соцсетей.";
     }
 
-    static String settings(BotUserStore.Profile p) {
+    static String settings(BotUserStore.Profile p, CopyAccess access) {
         return "⚙️ <b>Настройки обработки</b>\n\nРежим: <b>"
                 + (p.hard() ? "🔥 Hard" : "✨ Basic")
-                + "</b>\nКопий с каждого исходника: <b>"
-                + p.copies()
-                + "</b>\n\n"
+                + "</b>\nДоступ: <b>" + access.label + "</b>\n"
+                + "Видео: " + access.selected(p, false) + " из " + access.videos
+                + " · Фото: " + access.selected(p, true) + " из " + access.photos + "\n\n"
                 + "Выбери режим и количество кнопками ниже. Настройки сохранятся.\n"
                 + "Hard для видео приближает центр кадра и заметнее меняет цвет.\n\n"
                 + "Все функции сейчас бесплатны.";
     }
 
-    static String subscription(BotUserStore.Profile p) {
+    static String subscription(BotUserStore.Profile p, CopyAccess access) {
         return "💎 <b>Подписка и статистика</b>\n\n🧪 Тестовый доступ — <b>без оплаты</b>.\n"
                 + "Платная подписка не оформлена. Ограничения по исходникам отключены.\n\n"
                 + "📊 В этом месяце: <b>"
@@ -83,10 +89,10 @@ public final class BotScreens {
                 + "Даже при нуле можно продолжать бесплатно.\n"
                 + "🗓 Сброс статистики: "
                 + p.month().plusMonths(1).atDay(1).format(DateTimeFormatter.ofPattern("dd.MM.yyyy"))
-                + " (Москва).\n\n<b>Макет будущих тарифов</b>\n"
-                + "💎 Basic · 990 ₽/мес — до 50 исходников, до 5 копий.\n"
-                + "🚀 PRO · 4 990 ₽/мес — безлимит исходников, Basic + Hard, до 10 копий.\n\n"
-                + "Это демонстрационные условия из референса. Оплата и приоритетная очередь не подключены.";
+                + " (Москва).\n\nДоступ: " + access.label + "\n"
+                + "Лимит для видео: " + access.videos + ".\n"
+                + "Лимит для фото: " + access.photos + ".\n\n"
+                + "Кнопки оплаты демонстрационные.";
     }
 
     static Object subscriptionKeys() {
@@ -94,12 +100,12 @@ public final class BotScreens {
                 "inline_keyboard",
                 List.of(
                         List.of(button("💎 Basic · 990 ₽ — демо", "pay:basic")),
-                        List.of(button("🚀 PRO · 4 990 ₽ — демо", "pay:pro")),
+                        List.of(button("🚀 High · 4 990 ₽ — демо", "pay:pro")),
                         List.of(button("← Главное меню", "home"))));
     }
 
     static String help(int maxInputMb) {
-        return "📖 <b>Как это работает</b>\n\n1. Выбери режим и 1–10 копий в /settings.\n"
+        return "📖 <b>Как это работает</b>\n\n1. Выбери режим и число копий для фото и видео в /settings.\n"
                 + "2. Отправь MP4/MOV или фото JPEG/PNG до " + maxInputMb + " МБ.\n"
                 + "3. Следи за прогрессом и получай результаты.\n\n"
                 + "Фото — до 20 мегапикселей; результат JPEG-файлом. Видео — MP4 с плеером. "

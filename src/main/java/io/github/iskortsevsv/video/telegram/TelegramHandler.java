@@ -80,11 +80,19 @@ public class TelegramHandler {
                 return;
             }
             var profile = users.get(id);
+            var access = config.highChatIds().contains(id) ? CopyAccess.HIGH : CopyAccess.BASIC;
             if (action.startsWith("mode:")) {
-                profile = users.settings(id, action.substring(5), profile.copies());
+                profile = users.settings(id, action.substring(5), profile.videoCopies(), profile.photoCopies());
+                action = "settings";
+            } else if (action.startsWith("video:") || action.startsWith("photo:")) {
+                boolean photoSetting = action.startsWith("photo:");
+                int count = Integer.parseInt(action.substring(6));
+                access.validate(photoSetting, count);
+                profile = users.settings(id, profile.mode(), photoSetting ? profile.videoCopies() : count,
+                        photoSetting ? count : profile.photoCopies());
                 action = "settings";
             } else if (action.startsWith("copies:")) {
-                profile = users.settings(id, profile.mode(), Integer.parseInt(action.substring(7)));
+                // Old keyboards selected one count for both media. Show the new choices.
                 action = "settings";
             }
             switch (action) {
@@ -97,8 +105,8 @@ public class TelegramHandler {
                             id,
                             callback,
                             message,
-                            BotScreens.settings(profile),
-                            BotScreens.settingsKeys(profile));
+                            BotScreens.settings(profile, access),
+                            BotScreens.settingsKeys(profile, access));
                     return;
                 }
                 case "/subscription", "subscription" -> {
@@ -106,7 +114,7 @@ public class TelegramHandler {
                             id,
                             callback,
                             message,
-                            BotScreens.subscription(profile),
+                            BotScreens.subscription(profile, access),
                             BotScreens.subscriptionKeys());
                     return;
                 }
@@ -116,7 +124,7 @@ public class TelegramHandler {
                             "🧪 <b>Оплата пока не подключена</b>\n\n"
                                 + "Это демонстрационная кнопка. Деньги не списываются, подписка не"
                                 + " оформляется.\n"
-                                + "Оба режима и до 10 копий доступны бесплатно — просто отправь"
+                                + "Лимиты копий указаны в /settings. Для обработки отправь"
                                 + " файл.",
                             BotScreens.homeKeys());
                     return;
@@ -166,25 +174,18 @@ public class TelegramHandler {
                     caption.isBlank() && profile.hard()
                             ? new ProcessingOptions(1.04, .94)
                             : options(caption);
-            var snapshot = BotJournal.snapshot(profile, options);
-            profile =
-                    new BotUserStore.Profile(
-                            snapshot.mode(),
-                            snapshot.copies(),
-                            profile.originals(),
-                            profile.results(),
-                            profile.month());
-            var savedOptions = new ProcessingOptions(snapshot.speed(), snapshot.scale());
+            int copies = access.selected(profile, photo);
+            var snapshot = BotJournal.snapshot(new BotJournal.Snapshot(
+                    profile.mode(), copies, options.speed(), options.scale()));
             long progress =
                     client.screen(
                             id,
                             "⏳ <b>Файл принят</b>\nКопий: "
-                                    + profile.copies()
+                                    + snapshot.copies()
                                     + " · Режим: "
-                                    + (profile.hard() ? "Hard" : "Basic")
+                                    + (snapshot.hard() ? "Hard" : "Basic")
                                     + "\nОжидает обработки…",
                             Map.of("inline_keyboard", List.of()));
-            var selected = profile;
             boolean isPhoto = photo;
             String fileId = media.path("file_id").asText();
             if (!jobs.submit(
@@ -196,8 +197,7 @@ public class TelegramHandler {
                                     progress,
                                     fileId,
                                     isPhoto,
-                                    selected,
-                                    savedOptions))) {
+                                    snapshot))) {
                 client.edit(
                         id,
                         progress,

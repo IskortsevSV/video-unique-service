@@ -48,7 +48,8 @@ class TelegramResilienceQaTest {
     }
 
     TelegramProperties config(Set<Long> allowed) {
-        return new TelegramProperties(true, TOKEN, directory.resolve("state/offset.txt"), allowed);
+        return new TelegramProperties(true, TOKEN, directory.resolve("state/offset.txt"), allowed,
+                8081, null, Set.of(), false, false, Set.of(CHAT));
     }
 
     void launch(Set<Long> allowed) throws Exception {
@@ -344,7 +345,8 @@ class TelegramResilienceQaTest {
     /** Запускает тестовый экземпляр бота в отдельном процессе для аварийных сценариев. */
     public static class CrashBot {
         public static void main(String[] args) throws Exception {
-            var config = new TelegramProperties(true, TOKEN, Path.of(args[1]), Set.of(CHAT));
+            var config = new TelegramProperties(true, TOKEN, Path.of(args[1]), Set.of(CHAT),
+                    8081, null, Set.of(), false, false, Set.of(CHAT));
             var bot = new TestBot(config, args[0]);
             bot.start();
             Thread.sleep(60000);

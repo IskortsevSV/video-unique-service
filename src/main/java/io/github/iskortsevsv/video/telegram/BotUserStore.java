@@ -18,12 +18,12 @@ import io.github.iskortsevsv.video.config.TelegramProperties;
 @Component
 public class BotUserStore {
     /** Настройки обработки и счётчики за указанный календарный месяц. */
-    public record Profile(String mode, int copies, int originals, int results, YearMonth month) {
+    public record Profile(String mode, int videoCopies, int photoCopies, int originals, int results, YearMonth month) {
         public Profile {
             if (!mode.equals("basic") && !mode.equals("hard")) {
                 throw new IllegalArgumentException("Unknown mode");
             }
-            if (copies < 1 || copies > 10) {
+            if (videoCopies < 1 || videoCopies > 10 || photoCopies < 1 || photoCopies > 10) {
                 throw new IllegalArgumentException("Copies must be between 1 and 10");
             }
         }
@@ -58,19 +58,21 @@ public class BotUserStore {
         }
         var month = YearMonth.now(clock);
         boolean current = month.toString().equals(data.getProperty("month"));
+        String legacyCopies = data.getProperty("copies", "3");
         return new Profile(
                 data.getProperty("mode", "basic"),
-                Integer.parseInt(data.getProperty("copies", "3")),
+                Integer.parseInt(data.getProperty("videoCopies", legacyCopies)),
+                Integer.parseInt(data.getProperty("photoCopies", legacyCopies)),
                 current ? Integer.parseInt(data.getProperty("originals", "0")) : 0,
                 current ? Integer.parseInt(data.getProperty("results", "0")) : 0,
                 month);
     }
 
     /** Сохраняет режим и количество копий, сохраняя текущие счётчики. */
-    public synchronized Profile settings(long id, String mode, int copies) throws IOException {
+    public synchronized Profile settings(long id, String mode, int videoCopies, int photoCopies) throws IOException {
         var current = get(id);
         var updated =
-                new Profile(mode, copies, current.originals(), current.results(), current.month());
+                new Profile(mode, videoCopies, photoCopies, current.originals(), current.results(), current.month());
         save(id, updated);
         return updated;
     }
@@ -82,7 +84,8 @@ public class BotUserStore {
                 id,
                 new Profile(
                         p.mode(),
-                        p.copies(),
+                        p.videoCopies(),
+                        p.photoCopies(),
                         p.originals() + (first ? 1 : 0),
                         p.results() + 1,
                         p.month()));
@@ -92,7 +95,8 @@ public class BotUserStore {
         Files.createDirectories(root);
         var p = new Properties();
         p.setProperty("mode", profile.mode());
-        p.setProperty("copies", "" + profile.copies());
+        p.setProperty("videoCopies", "" + profile.videoCopies());
+        p.setProperty("photoCopies", "" + profile.photoCopies());
         p.setProperty("originals", "" + profile.originals());
         p.setProperty("results", "" + profile.results());
         p.setProperty("month", profile.month().toString());

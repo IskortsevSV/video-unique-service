@@ -227,11 +227,11 @@ class TelegramClientTest {
         try {
             var handler = TelegramTestSupport.handler(client, config, new BotUserStore(config), jobs, null);
             var update = new tools.jackson.databind.json.JsonMapper().readTree("""
-                    {"callback_query":{"id":"expired","from":{"id":42},"data":"copies:5",
+                    {"callback_query":{"id":"expired","from":{"id":42},"data":"photo:2",
                     "message":{"message_id":10,"chat":{"id":42,"type":"private"}}}}
                     """);
             assertDoesNotThrow(() -> handler.handle(update));
-            assertEquals(5, new BotUserStore(config).get(42).copies());
+            assertEquals(2, new BotUserStore(config).get(42).photoCopies());
             assertTrue(request.get().contains("message_id"));
         } finally {
             jobs.stop();

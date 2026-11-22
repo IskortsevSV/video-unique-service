@@ -270,15 +270,12 @@ final class BotJournal {
             owner.active.remove(id);
         }
 
-        synchronized Snapshot snapshot(
-                BotUserStore.Profile profile,
-                io.github.iskortsevsv.video.dto.ProcessingOptions options)
-                throws IOException {
+        synchronized Snapshot snapshot(Snapshot requested) throws IOException {
             if (!data.containsKey("mode")) {
-                data.setProperty("mode", profile.mode());
-                data.setProperty("copies", Integer.toString(profile.copies()));
-                data.setProperty("speed", Double.toString(options.speed()));
-                data.setProperty("scale", Double.toString(options.scale()));
+                data.setProperty("mode", requested.mode());
+                data.setProperty("copies", Integer.toString(requested.copies()));
+                data.setProperty("speed", Double.toString(requested.speed()));
+                data.setProperty("scale", Double.toString(requested.scale()));
                 data.setProperty("variant-key", UUID.randomUUID().toString());
                 persist();
             }
@@ -326,14 +323,14 @@ final class BotJournal {
     }
 
     /** Фиксирует параметры обработки, выбранные при приёме задания. */
-    record Snapshot(String mode, int copies, double speed, double scale) {}
+    record Snapshot(String mode, int copies, double speed, double scale) {
+        boolean hard() {
+            return mode.equals("hard");
+        }
+    }
 
-    static Snapshot snapshot(
-            BotUserStore.Profile profile, io.github.iskortsevsv.video.dto.ProcessingOptions options)
-            throws IOException {
-        return current() == null
-                ? new Snapshot(profile.mode(), profile.copies(), options.speed(), options.scale())
-                : current().snapshot(profile, options);
+    static Snapshot snapshot(Snapshot requested) throws IOException {
+        return current() == null ? requested : current().snapshot(requested);
     }
 
     static void sending(boolean value) throws IOException {

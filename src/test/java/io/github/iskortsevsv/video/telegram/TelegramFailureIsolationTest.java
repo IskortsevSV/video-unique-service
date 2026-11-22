@@ -130,7 +130,7 @@ class TelegramFailureIsolationTest {
         var journal = new BotJournal(config().offsetFile());
         var update = message(100, 1, "/start");
         var item = journal.stage(update);
-        item.snapshot(new BotUserStore(config()).get(1), new ProcessingOptions(1.01, .98));
+        item.snapshot(new BotJournal.Snapshot("basic", 1, 1.01, .98));
         item.delivered(1);
         item.sending(true);
         item.failed(new TelegramApiException(60, 503));
@@ -216,10 +216,9 @@ class TelegramFailureIsolationTest {
         var users = new BotUserStore(config());
         var service = new VideoService(videos, hashes, new VideoProperties("ffmpeg", "ffprobe", Duration.ofSeconds(2), 1));
         var batches = new MediaBatchService(client, service, videos, photos, hashes, users, new FeedbackStore(config()));
-        var profile = users.settings(1, "basic", 1);
-        var options = new ProcessingOptions(1.01, .98);
+        var requested = new BotJournal.Snapshot("basic", 1, 1.01, .98);
         var item = new BotJournal(config().offsetFile()).stage(message(100, 1, "/start"));
-        item.snapshot(profile, options);
+        item.snapshot(requested);
         var output = new AtomicReference<Path>();
         doAnswer(call -> {
             Files.writeString(call.getArgument(1), "input");
@@ -235,7 +234,7 @@ class TelegramFailureIsolationTest {
         BotJournal.set(item);
         try {
             assertEquals(403, assertThrows(TelegramApiException.class,
-                    () -> batches.run(1, 10, 11, "file", true, profile, options)).errorCode());
+                    () -> batches.run(1, 10, 11, "file", true, requested)).errorCode());
             assertFalse(item.uncertain(), "Telegram explicitly rejected the upload");
             assertEquals(0, item.sent());
             assertFalse(Files.exists(output.get()));
